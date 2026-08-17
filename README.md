@@ -4,6 +4,8 @@ A mod that allows you to switch between Little Knight and Noel
  小骑士模组（KnightInCradle）安装说明
 ====================================
 
+[Important] Please make sure your AliceInCradle version is 029j, otherwise the mod won't work properly!
+
 1. 确保游戏已安装 BepInEx（如果游戏还没有 BepInEx 文件夹，请先安装 BepInEx 5.4 到游戏目录）。
 2. 把本压缩包内的 BepInEx 文件夹整个复制到游戏根目录（与 AliceInCradle.exe 同级），
    提示合并/覆盖时选“是”。安装后的目录结构应为：
