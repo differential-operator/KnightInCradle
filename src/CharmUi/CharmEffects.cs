@@ -5032,6 +5032,85 @@ namespace KnightInCradle.CharmUi
                 return false;
             }
         }
+        /// <summary>
+        /// 护符37 舞梦者（需求 2026-09-27）：诺艾尔释放**圣光爆发**时，
+        /// 清空半径 `DreamWielderMpDrainRadius`（5 格）内所有魔物的魔力。
+        /// 挂点：`M2PrSkill.executeSmallAttack` 的后缀 —— 爆发状态机在 t>=9 时会用
+        /// `executeSmallAttack(0, null)` 生成那一发 PR_BURST 攻击包（`M2PrSkill.cs:runBurst`），
+        /// 这里判断产物 kind 就是"这一下是圣光爆发"。
+        /// </summary>
+        private static void DreamWielderSmallAttackPostfix(MagicItem __result)
+        {
+            try
+            {
+                if (IsKnightMode || __result == null || __result.kind != MGKIND.PR_BURST ||
+                    !IsEquipped(CharmOwner.Noel, DreamId))
+                {
+                    return;
+                }
+                ClearEnemyMpAroundNoel();
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>舞梦者：清空 5 格半径内魔物的魔力（只对本地诺艾尔生效）。</summary>
+        private static void ClearEnemyMpAroundNoel()
+        {
+            try
+            {
+                PRNoel pr = KnightInCradleBehaviour.GetPrPublic();
+                Map2d mp = pr != null ? pr.Mp : null;
+                if (mp == null || PrMpField == null)
+                {
+                    return;
+                }
+                float radius = DreamWielderMpDrainRadius;
+                int mask = NoelEnemyOverlapMask();
+                if (mask == 0)
+                {
+                    return;
+                }
+                Vector2 center = mp.gameObject.transform.TransformPoint(
+                    new Vector2(mp.pixel2ux(pr.x * mp.CLEN), mp.pixel2uy(pr.y * mp.CLEN)));
+                Collider2D[] hits = Physics2D.OverlapCircleAll(center, radius, mask);
+                var done = new HashSet<NelEnemy>();
+                for (int i = 0; i < hits.Length; i++)
+                {
+                    Collider2D c = hits[i];
+                    if (c == null)
+                    {
+                        continue;
+                    }
+                    NelEnemy en = c.GetComponentInParent<NelEnemy>();
+                    if (en == null || !en.is_alive || !done.Add(en))
+                    {
+                        continue;
+                    }
+                    float dx = en.x - pr.x;
+                    float dy = en.y - pr.y;
+                    if (dx * dx + dy * dy > radius * radius)
+                    {
+                        continue; // 用地图坐标复核（物理单位与格 1:1）
+                    }
+                    try
+                    {
+                        PrMpField.SetValue(en, 0f); // M2Attackable.mp
+                        en.addF(NelEnemy.FLAG.FINE_HPMP_BAR);
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>舞梦者：魔力吸取半径（格，最终数值写死在 DLL 里）。</summary>
+        public const float DreamWielderMpDrainRadius = 5f;
         private static bool TryDamageGenericTargetNoel(Collider2D c, PRNoel pr, int dmg, Dictionary<object, float> nextHit, float now, float interval)
         {
             try
@@ -7312,6 +7391,11 @@ namespace KnightInCradle.CharmUi
             {
                 mult *= ShamanDamageMult;
             }
+            // 护符37 舞梦者（需求 2026-09-27）：诺艾尔**圣光爆发**的伤害提升 100%
+            if (kind == MGKIND.PR_BURST && IsEquipped(CharmOwner.Noel, DreamId))
+            {
+                mult *= 2f;
+            }
             if (IsEquipped(CharmOwner.Noel, PowerId) && IsPowerBoostKind(kind))
             {
                 mult *= PowerDamageMult;
@@ -8987,6 +9071,10 @@ namespace KnightInCradle.CharmUi
                         // 护符18 修长之钉（诺艾尔侧）：登记一道白色弧带（长度=判定触及距离）
                         harmony.Patch(smallAttack, postfix: new HarmonyMethod(
                             typeof(CharmEffects).GetMethod(nameof(LongNailSmallAttackPostfix),
+                                BindingFlags.Static | BindingFlags.NonPublic)));
+                        // 护符37 舞梦者（诺艾尔侧）：圣光爆发时清空周围 5 格内魔物的魔力
+                        harmony.Patch(smallAttack, postfix: new HarmonyMethod(
+                            typeof(CharmEffects).GetMethod(nameof(DreamWielderSmallAttackPostfix),
                                 BindingFlags.Static | BindingFlags.NonPublic)));
                     }
                 // 护符18 修长之钉（诺艾尔侧）：判定侧——手杖 reach 倍率 + 总触及距离精确补足
