@@ -979,6 +979,8 @@ namespace KnightInCradle.CharmUi
             /// </summary>
             public float CarriedRatio;
             public readonly HashSet<NelEnemy> Hits = new HashSet<NelEnemy>();
+            /// <summary>非魔物目标（靶子/拳炮/路障）也一样只结算一次。</summary>
+            public readonly HashSet<object> GenericHits = new HashSet<object>();
         }
 
         private static readonly List<NoelElegyBlade> _noelElegyBlades = new List<NoelElegyBlade>();
@@ -1158,7 +1160,13 @@ namespace KnightInCradle.CharmUi
                     continue;
                 }
                 NelEnemy enemy = c.GetComponentInParent<NelEnemy>();
-                if (enemy == null || !b.Hits.Add(enemy))
+                if (enemy == null)
+                {
+                    // 非魔物目标（靶子/拳炮/路障）：走通用通道（每道剑气每目标一次）
+                    TryDamageGenericTargetNoel(c, pr, NoelElegyDamageForGeneric(b), b.GenericHits);
+                    continue;
+                }
+                if (!b.Hits.Add(enemy))
                 {
                     continue; // 每只魔物只会被这一道剑气打中一次
                 }
@@ -4961,6 +4969,69 @@ namespace KnightInCradle.CharmUi
         /// （`KnightEntity.cs:24713`），所以这里复用小骑士那套做法（`TryHitGenericAttackable`）。
         /// 返回 true 表示该碰撞体已被本分支处理（调用方应 continue）。
         /// </summary>
+        /// <summary>冲刺对非魔物目标的伤害（与打怪同源：当前轻攻击/魔法霰弹 × 冲刺倍率）。</summary>
+        private static int NoelDashDamageForGeneric(PRNoel pr)
+        {
+            try
+            {
+                NelAttackInfo src = _dashUseShotgun ? _dashShotgunAtk : _dashPunchAtk;
+                int baseDmg = src != null && src.hpdmg0 > 0
+                    ? src.hpdmg0
+                    : KnightInCradlePlugin.ShadowDashFallbackDamage;
+                float mult = KnightInCradlePlugin.ShadowDashDamageMult * (_dashUseShotgun ? ShamanDamageMult : 1f);
+                return Mathf.Max(1, Mathf.FloorToInt(baseDmg * mult + 0.5f));
+            }
+            catch (Exception)
+            {
+                return KnightInCradlePlugin.ShadowDashFallbackDamage;
+            }
+        }
+
+        /// <summary>挽歌剑气对非魔物目标的伤害（未蓄力 = 固定值；已蓄力 = 它的 30%）。</summary>
+        private static int NoelElegyDamageForGeneric(NoelElegyBlade b)
+        {
+            int dmg = ElegyDamage;
+            if (b != null && b.Magic)
+            {
+                dmg = Mathf.FloorToInt(dmg * KnightInCradlePlugin.ElegyChargedDamageRatio + 0.5f);
+            }
+            return Mathf.Max(1, dmg);
+        }
+
+        /// <summary>同上，但用"每招只结算一次"的集合版本（冲刺 / 单道剑气用）。</summary>
+        private static bool TryDamageGenericTargetNoel(Collider2D c, PRNoel pr, int dmg, HashSet<object> dedup)
+        {
+            try
+            {
+                if (c == null || pr == null || dmg <= 0)
+                {
+                    return false;
+                }
+                M2Attackable a = c.GetComponentInParent<M2Attackable>();
+                if (a == null || a is PR || a is M2MoverPr || a is NelEnemy)
+                {
+                    return false;
+                }
+                if (dedup != null && !dedup.Add(a))
+                {
+                    return true; // 这一招已经打过它
+                }
+                var atk = new NelAttackInfo();
+                atk.hpdmg0 = dmg;
+                atk.hpdmg_current = dmg;
+                atk.fix_damage = true;
+                atk.Caster = pr;
+                atk.AttackFrom = pr;
+                atk.PublishMagic = _lastNoelNailMg;
+                atk.CenterXy(a.x, a.y, 0f);
+                a.applyHpDamage(dmg, true, atk);
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
         private static bool TryDamageGenericTargetNoel(Collider2D c, PRNoel pr, int dmg, Dictionary<object, float> nextHit, float now, float interval)
         {
             try
@@ -9607,6 +9678,8 @@ namespace KnightInCradle.CharmUi
         private static bool _dashUseShotgun;
         /// <summary>本次冲刺已经打过的敌人（同一只只结算一次）。</summary>
         private static readonly HashSet<NelEnemy> _dashHitEnemies = new HashSet<NelEnemy>();
+        /// <summary>本次冲刺已经打过的**非魔物**目标（靶子/拳炮/路障，同一目标只结算一次）。</summary>
+        private static readonly HashSet<object> _dashHitGeneric = new HashSet<object>();
         /// <summary>本次冲刺的霰弹命中特效是否已经播过（只播一次）。</summary>
         private static bool _dashShotgunFxDone;
 
@@ -9748,6 +9821,7 @@ namespace KnightInCradle.CharmUi
             {
             }
             _dashHitEnemies.Clear();
+            _dashHitGeneric.Clear();
             _dashShotgunFxDone = false;
             // 松开护盾键 / 按下护盾键的瞬间：播放冲刺爆发音效（hero_super_dash_burst）
             try
@@ -11658,7 +11732,13 @@ namespace KnightInCradle.CharmUi
                         continue;
                     }
                     NelEnemy enemy = c.GetComponentInParent<NelEnemy>();
-                    if (enemy == null || !_dashHitEnemies.Add(enemy))
+                    if (enemy == null)
+                    {
+                        // 非魔物目标（靶子/拳炮/路障）：按本次冲刺的伤害打一次
+                        TryDamageGenericTargetNoel(c, pr, NoelDashDamageForGeneric(pr), _dashHitGeneric);
+                        continue;
+                    }
+                    if (!_dashHitEnemies.Add(enemy))
                     {
                         continue; // 每只魔物只挨一次
                     }
