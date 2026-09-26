@@ -4500,6 +4500,7 @@ namespace KnightInCradle.CharmUi
         private static bool _nmTapWasRun;
         // ---- 旋风斩：无敌窗口 + 自绘圆形判定箱 ----
         /// <summary>圆内敌人的"下次可再吃一次伤害"的时刻（`Time.time`）。</summary>
+        private static readonly HashSet<object> _nmCircleGenericDone = new HashSet<object>();
         private static readonly Dictionary<NelEnemy, float> _nmCircleNextHit =
             new Dictionary<NelEnemy, float>();
         private static Texture2D _nmCircleTex;
@@ -4836,6 +4837,7 @@ namespace KnightInCradle.CharmUi
                 }
             }
             _nmCircleNextHit.Clear();
+            _nmCircleGenericDone.Clear();
             try
             {
                 ReleaseNailMasterCircleTicket();
@@ -4920,6 +4922,9 @@ namespace KnightInCradle.CharmUi
                     NelEnemy enemy = c.GetComponentInParent<NelEnemy>();
                     if (enemy == null)
                     {
+                        // 非魔物目标（靶子/拳炮/路障）：按同一固定伤害打一次
+                        int gdmg = _noelFuryActive ? NailMasterSpinDamageFury : (IsEquipped(CharmOwner.Noel, PowerId) ? NailMasterSpinDamagePower : NailMasterSpinDamageBase);
+                        TryDamageGenericTargetNoel(c, pr, gdmg, _nmCircleGenericDone);
                         continue;
                     }
                     float nextHit;
@@ -4950,6 +4955,45 @@ namespace KnightInCradle.CharmUi
         public const int NailMasterSpinDamagePower = 30;
         public const int NailMasterSpinDamageFury = 40;
 
+        /// <summary>
+        /// 诺艾尔侧：对**非魔物**的可攻击目标（的当て靶 / 拳炮 / TD路障等）造成固定伤害。
+        /// 与诺艾尔自建攻击包同样的坑：这些目标要求 `Atk.AttackFrom` 与 `Atk.PublishMagic` 非空
+        /// （`KnightEntity.cs:24713`），所以这里复用小骑士那套做法（`TryHitGenericAttackable`）。
+        /// 返回 true 表示该碰撞体已被本分支处理（调用方应 continue）。
+        /// </summary>
+        private static bool TryDamageGenericTargetNoel(Collider2D c, PRNoel pr, int dmg, HashSet<object> dedup)
+        {
+            try
+            {
+                if (c == null || pr == null || dmg <= 0)
+                {
+                    return false;
+                }
+                M2Attackable a = c.GetComponentInParent<M2Attackable>();
+                if (a == null || a is PR || a is M2MoverPr || a is NelEnemy)
+                {
+                    return false; // 魔物走原来的路
+                }
+                if (dedup != null && !dedup.Add(a))
+                {
+                    return true; // 这一招已经打过它
+                }
+                var atk = new NelAttackInfo();
+                atk.hpdmg0 = dmg;
+                atk.hpdmg_current = dmg;
+                atk.fix_damage = true;
+                atk.Caster = pr;
+                atk.AttackFrom = pr;
+                atk.PublishMagic = _lastNoelNailMg;
+                atk.CenterXy(a.x, a.y, 0f);
+                a.applyHpDamage(dmg, true, atk);
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
         private static void ApplyNailMasterSpinHit(PRNoel pr, NelEnemy enemy)
         {
             try
