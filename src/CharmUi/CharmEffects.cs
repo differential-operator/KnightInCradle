@@ -1624,6 +1624,7 @@ namespace KnightInCradle.CharmUi
                 // 世界坐标的圆只用来粗筛，真正的"3 格"用地图坐标复核（grid = 1.0）
                 Collider2D[] hits = Physics2D.OverlapCircleAll(center, radius, mask);
                 var done = new HashSet<NelEnemy>();
+                float drainedTotal = 0f;
                 for (int i = 0; i < hits.Length; i++)
                 {
                     Collider2D c = hits[i];
@@ -5096,11 +5097,26 @@ namespace KnightInCradle.CharmUi
                     }
                     try
                     {
+                        // 需求 2026-09-27：清空敌人魔力的同时，把等量的魔力补给诺艾尔
+                        try
+                        {
+                            drainedTotal += Mathf.Max(0f, (float)PrMpField.GetValue(en));
+                        }
+                        catch (Exception)
+                        {
+                        }
                         PrMpField.SetValue(en, 0f); // M2Attackable.mp
                         en.addF(NelEnemy.FLAG.FINE_HPMP_BAR);
                     }
                     catch (Exception)
                     {
+                    }
+                }
+                if (drainedTotal > 0f)
+                {
+                    if (KnightInCradleBehaviour.GrantNoelMana(drainedTotal))
+                    {
+                        RefreshNoelHudMp();
                     }
                 }
             }
