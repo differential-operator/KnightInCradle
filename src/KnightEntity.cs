@@ -5264,7 +5264,19 @@ namespace KnightInCradle
                 p.Y += p.DirY * step;
                 p.Traveled += step;
                 CheckElegyBladeHit(p);
-                if (p.Traveled >= ElegyBladeRange)
+                // 需求 2026-09-27：取消原来的 4 格射程限制 —— 改成"飞出房间（摄像机可视范围）才消失"，
+                // 于是同一时间可以存在很多道剑气（列表本身不限制数量）。
+                // 另外留一个很大的距离上限（60 格）作为兜底，防止极端情况下剑气永久残留。
+                bool outsideRoom = false;
+                try
+                {
+                    outsideRoom = !_mp.isinCamera(p.X, p.Y, 0f, 0f, 6f * _mp.CLEN);
+                }
+                catch (Exception)
+                {
+                    outsideRoom = false;
+                }
+                if (outsideRoom || p.Traveled >= ElegyBladeMaxRange)
                 {
                     _elegyBlades.RemoveAt(bi);
                 }
@@ -9521,7 +9533,8 @@ namespace KnightInCradle
         private Material _uterusExplosionDbgMat;
         // ---- 蜕变挽歌（满血普攻剑气）----
         private const float ElegyBladeSpeed = 30f;   // 剑气速度（格/秒）
-        private const float ElegyBladeRange = 4f;    // 剑气射程（格）
+        /// <summary>剑气兜底射程（格）：正常靠"飞出房间"消失，这个只是防残留的上限。</summary>
+        private const float ElegyBladeMaxRange = 60f;
         private const int ElegyBladeDamage = 15;     // 剑气伤害
         private const float ElegyBladeHitboxW = 2.0f; // 剑气判定箱长度（格，沿飞行方向）
         private const float ElegyBladeHitboxH = 1.4f; // 剑气判定箱高（格）
