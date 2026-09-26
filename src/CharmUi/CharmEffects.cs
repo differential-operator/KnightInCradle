@@ -1198,6 +1198,8 @@ namespace KnightInCradle.CharmUi
                     int dmg = baseDmg > 0 ? Mathf.FloorToInt(baseDmg * mult + 0.5f) : baseDmg;
                     var atk = new NelAttackInfo(src);
                     atk.Caster = pr;
+                    atk.AttackFrom = pr;
+                    if (atk.PublishMagic == null) { atk.PublishMagic = _lastNoelNailMg; }
                     atk.hpdmg0 = dmg;
                     atk.hpdmg_current = -1000; // 置回未结算态 → 按下面的发布率重新算
                     atk._apply_knockback_current = true;
@@ -1246,6 +1248,8 @@ namespace KnightInCradle.CharmUi
                 atkFallback.hpdmg0 = fallback;
                 atkFallback.fix_damage = true;
                 atkFallback.Caster = pr;
+                atkFallback.AttackFrom = pr;
+                if (atkFallback.PublishMagic == null) { atkFallback.PublishMagic = _lastNoelNailMg; }
                 atkFallback.CenterXy(enemy.x, enemy.y, 0f);
                 ResolveHeavyFocusHit();
                 enemy.applyDamage(atkFallback, false);
@@ -4965,6 +4969,8 @@ namespace KnightInCradle.CharmUi
                 var atk = new NelAttackInfo();
                 atk.fix_damage = true; // 固定伤害，不吃敌人减伤/其它乘区
                 atk.Caster = pr;
+                atk.AttackFrom = pr;
+                if (atk.PublishMagic == null) { atk.PublishMagic = _lastNoelNailMg; }
                 atk.hpdmg0 = dmg;
                 atk.hpdmg_current = dmg;
                 atk._apply_knockback_current = true;
@@ -9544,6 +9550,8 @@ namespace KnightInCradle.CharmUi
         private static float _dashPunchRatio = 1f;
         /// <summary>最近一次**魔法霰弹**（含变种）的攻击包副本。</summary>
         private static NelAttackInfo _dashShotgunAtk;
+        /// <summary>最近一次诺艾尔普攻/魔法霰弹的 MagicItem（供自建攻击包当 `PublishMagic` 用）。</summary>
+        private static MagicItem _lastNoelNailMg;
         private static float _dashShotgunRatio = 1f;
         /// <summary>本次冲刺是否按"魔法霰弹"结算（冲刺开始那一刻法杖是否带霰弹附魔）。</summary>
         private static bool _dashUseShotgun;
@@ -11516,6 +11524,9 @@ namespace KnightInCradle.CharmUi
         {
             try
             {
+                // 记下这一发普攻/霰弹的 MagicItem 本体：靶子这类目标要求攻击包带 `PublishMagic`
+                // （`KnightEntity.cs:24713`），我们自建的旋风斩/冲刺/剑气包要复用它。
+                _lastNoelNailMg = mg;
                 if (mg == null || mg.Atk0 == null)
                 {
                     return;
@@ -11651,6 +11662,8 @@ namespace KnightInCradle.CharmUi
                     ratio = 1f;
                 }
                 atk.Caster = pr;
+                atk.AttackFrom = pr;
+                if (atk.PublishMagic == null) { atk.PublishMagic = _lastNoelNailMg; }
                 atk.hpdmg0 = dmg;
                 atk.hpdmg_current = -1000; // 置回未结算态 → 按下面的发布率重新算
                 atk._apply_knockback_current = true;
