@@ -18640,7 +18640,8 @@ namespace KnightInCradle
             {
                 ElegyBladeProj p = _elegyBlades[bi];
                 // 渲染框：向上 0.5 格、向右 1 格
-                float dx = (p.X + 1f - X) * _mp.CLEN;
+                // 需求 2026-09-27：上/下劈剑气（DirY != 0）的渲染位置再向右移动 0.5 格
+                float dx = (p.X + 1f + (p.DirY != 0f ? 0.5f : 0f) - X) * _mp.CLEN;
                 float dy = -(p.Y - 0.5f - Y) * _mp.CLEN; // 网格 y 向下为正，mesh y 向上为负
                 _elegyBladeMesh.Col = MTRX.ColWhite;
                 _elegyBladeMesh.initForImgAndTexture(tex);
