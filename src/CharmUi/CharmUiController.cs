@@ -102,7 +102,7 @@ namespace KnightInCradle.CharmUi
         public List<int> EquippedIds => _equippedIds;
         public int SelectedId { get; private set; } = -1;
         public int TotalCost { get; private set; }
-        public bool Overcharmed => TotalCost > CharmDatabase.NotchCapacity;
+        public bool Overcharmed => TotalCost > CharmDatabase.NotchCapacityFor(Owner);
         /// <summary>水平展开系数（0=收起 1=展开），供渲染层做开合动画。</summary>
         public float OpenScale => _progress;
         /// <summary>是否有护符正在平移。</summary>
@@ -203,7 +203,7 @@ namespace KnightInCradle.CharmUi
         public void ApplyEquippedFromSave(List<int> saved)
         {
             bool knight = Owner == CharmOwner.Knight;
-            int maxCount = knight ? CharmDatabase.NotchCapacity + 1 : CharmDatabase.NotchCapacity;
+            int maxCount = knight ? CharmDatabase.NotchCapacityFor(Owner) + 1 : CharmDatabase.NotchCapacityFor(Owner);
             _equippedIds.Clear();
             if (knight)
             {
@@ -589,7 +589,7 @@ namespace KnightInCradle.CharmUi
             if (!_equippedIds.Contains(CharmDatabase.GgSelectorId))
             {
                 // 已装备区容量上限（含虚空之心共 12 格）内才允许装配
-                if (_equippedIds.Count >= CharmDatabase.NotchCapacity + 1)
+                if (_equippedIds.Count >= CharmDatabase.NotchCapacityFor(Owner) + 1)
                 {
                     return;
                 }
@@ -695,7 +695,7 @@ namespace KnightInCradle.CharmUi
         private int UpperSlotCount
         {
             // 满 11 槽或已过载时不显示右侧空槽
-            get { return _equippedIds.Count + (TotalCost >= CharmDatabase.NotchCapacity ? 0 : 1); }
+            get { return _equippedIds.Count + (TotalCost >= CharmDatabase.NotchCapacityFor(Owner) ? 0 : 1); }
         }
 
         private void Move(int dx, int dy)
@@ -852,17 +852,17 @@ namespace KnightInCradle.CharmUi
                 {
                     return;
                 }
-                int newTotal = TotalCost + cd.Cost;
-                if (newTotal > CharmDatabase.NotchCapacity &&
-                    (TotalCost >= CharmDatabase.NotchCapacity || Overcharmed))
+                int newTotal = TotalCost + CharmDatabase.CostOf(cd, Owner);
+                if (newTotal > CharmDatabase.NotchCapacityFor(Owner) &&
+                    (TotalCost >= CharmDatabase.NotchCapacityFor(Owner) || Overcharmed))
                 {
                     return;
                 }
                 _equippedIds.Add(id);
                 _flyIndex = _equippedIds.IndexOf(id); // 目标槽位
                 // 音效延迟到动画到达已装备区时播放（超载播超载音，成功播成功+ui_save）
-                StartFlight(id, true, newTotal > CharmDatabase.NotchCapacity,
-                    newTotal <= CharmDatabase.NotchCapacity);
+                StartFlight(id, true, newTotal > CharmDatabase.NotchCapacityFor(Owner),
+                    newTotal <= CharmDatabase.NotchCapacityFor(Owner));
             }
             RecalcCost();
             CharmSave.WriteEquipped(Owner); // 装备变化立即写入 SF，随下次存档持久化
@@ -920,7 +920,7 @@ namespace KnightInCradle.CharmUi
                 CharmData cd = CharmDatabase.Get(id);
                 if (cd != null)
                 {
-                    sum += cd.Cost;
+                    sum += CharmDatabase.CostOf(cd, Owner);
                 }
             }
             TotalCost = sum;

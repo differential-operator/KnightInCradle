@@ -645,7 +645,7 @@ namespace KnightInCradle.CharmUi
             List<int> equipped = Controller.EquippedIds;
             // 满 11 槽或过载时不显示右侧空槽
             int slotCount = equipped.Count +
-                (Controller.TotalCost >= CharmDatabase.NotchCapacity ? 0 : 1);
+                (Controller.TotalCost >= CharmDatabase.NotchCapacityFor(Controller.Owner) ? 0 : 1);
             Texture2D slotTex = GetTemplateTexture("charm_up_template");
             if (slotTex == null)
             {
@@ -715,7 +715,7 @@ namespace KnightInCradle.CharmUi
 
             // 可见的槽孔数 = 当前上限（初始 3、随开箱增加，最多 14）。
             // 布局只有 11 个槽孔图，超出部分（12〜14）用同一个贴图按间距补画（位置/间距可配置）。
-            int holeCount = Mathf.Clamp(CharmDatabase.NotchCapacity, 1, CharmDatabase.MaxNotchCapacity);
+            int holeCount = Mathf.Clamp(CharmDatabase.NotchCapacityFor(Controller.Owner), 1, CharmDatabase.MaxNotchCapacity);
             float extraScale = KnightInCradlePlugin.CharmExtraHoleSpacingScale;
             float offX = KnightInCradlePlugin.CharmExtraHoleOffsetX;
             float offY = KnightInCradlePlugin.CharmExtraHoleOffsetY;
@@ -765,7 +765,7 @@ namespace KnightInCradle.CharmUi
         }
 
         /// <summary>
-        /// 该"护符槽孔"（cost_black）是否应该画出来：只画前 `CharmDatabase.NotchCapacity` 个
+        /// 该"护符槽孔"（cost_black）是否应该画出来：只画前 `CharmDatabase.NotchCapacityFor(Controller.Owner)` 个
         /// （初始 3，随开箱数每 4 箱 +1，最多 14）。序号 = 比它更靠左的槽孔数量。
         /// </summary>
         private bool IsCostHoleVisible(string path)
@@ -777,7 +777,7 @@ namespace KnightInCradle.CharmUi
                 {
                     return true;
                 }
-                int cap = CharmDatabase.NotchCapacity;
+                int cap = CharmDatabase.NotchCapacityFor(Controller.Owner);
                 int index = 0;
                 for (int i = 0; i < _data.elements.Length; i++)
                 {
@@ -832,7 +832,7 @@ namespace KnightInCradle.CharmUi
                     GUI.DrawTexture(drawRect, icon, ScaleMode.StretchToFill, true);
                 }
             }
-            string desc = cd.Desc;
+            string desc = CharmDatabase.DescOf(cd, Controller.Owner);
             if (id == CharmDatabase.FixedCharmId)
             {
                 desc = "这个护符是持有者的一部分，不能卸下。";
@@ -842,7 +842,7 @@ namespace KnightInCradle.CharmUi
             if (TryGetTaggedElement("detail_name", out UiElementData nameEl, out Rect nameRect) &&
                 nameEl.text != null)
             {
-                GUI.Label(nameRect, cd.Name,
+                GUI.Label(nameRect, CharmDatabase.NameOf(cd, Controller.Owner),
                     GetStyle(nameEl.text.fontSize, (TextAnchor)nameEl.text.alignment, FontStyle.Bold));
             }
             bool isGg = id == CharmDatabase.GgSelectorId;
@@ -859,7 +859,7 @@ namespace KnightInCradle.CharmUi
                 {
                     string costText = id == CharmDatabase.FixedCharmId
                         ? "不可卸下"
-                        : (cd.Cost < 0 ? "花费：？" : "花费：" + cd.Cost);
+                        : (CharmDatabase.CostOf(cd, Controller.Owner) < 0 ? "花费：？" : "花费：" + CharmDatabase.CostOf(cd, Controller.Owner));
                     GUI.Label(costRect, costText,
                         GetStyle(costEl.text.fontSize, (TextAnchor)costEl.text.alignment, FontStyle.Normal));
                 }
