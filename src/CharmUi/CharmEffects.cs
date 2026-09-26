@@ -11758,6 +11758,11 @@ namespace KnightInCradle.CharmUi
         /// <summary>true = 本次亡者之怒期间**进过战斗**（用于"战斗结束就退出亡者之怒"）。</summary>
         private static bool _noelFurySawBattle;
         /// <summary>
+        /// 战斗胜利（脱离战斗）时把 HP 恢复到该值（最终数值，写死在 DLL 里）。
+        /// 必须高于触发阈值（`FuryHpThreshold`，默认 30），否则下一帧会立刻再次进入亡者之怒。
+        /// </summary>
+        public const int FuryVictoryRestoreHp = 40;
+        /// <summary>
         /// true = 亡者之怒已**锁死**（诺艾尔已经死亡）。
         /// 需求（2026-09-26 追加）：死亡之后不再走阈值判定 —— 否则魔物补刀时
         /// `TryTriggerNoelFury` 会照旧把 HP 抬回 30，等于"死后原地复活"。
@@ -12138,6 +12143,23 @@ namespace KnightInCradle.CharmUi
                     }
                     else if (_noelFurySawBattle)
                     {
+                        // 需求 2026-09-27：战斗胜利后把 HP 恢复到 `FuryVictoryRestoreHp`（40）。
+                        // 否则 HP 仍 ≤ 阈值，下一帧又会被判定成"进入亡者之怒"（等于没退出）。
+                        try
+                        {
+                            int maxHp = PrMaxHpField != null ? (int)PrMaxHpField.GetValue(pr) : FuryVictoryRestoreHp;
+                            int nowHp = PrHpField != null ? (int)PrHpField.GetValue(pr) : 0;
+                            int target = Mathf.Min(Mathf.Max(FuryVictoryRestoreHp, nowHp), Mathf.Max(1, maxHp));
+                            if (PrHpField != null && nowHp != target)
+                            {
+                                PrHpField.SetValue(pr, target);
+                                RefreshNoelHudHp();
+                                HideNoelHpCushion(pr); // 顺便把 GaugeSaver 对齐，血条立刻显示新值
+                            }
+                        }
+                        catch (Exception)
+                        {
+                        }
                         ReleaseNoelFuryForVanish();
                         return;
                     }
