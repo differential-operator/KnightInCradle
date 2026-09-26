@@ -11755,6 +11755,8 @@ namespace KnightInCradle.CharmUi
         private static bool _noelFuryDying;
         /// <summary>本次"进入亡者之怒"是否已经放过圣光爆发（保证每次进入只放一次）。</summary>
         private static bool _noelFuryBurstFired;
+        /// <summary>true = 本次亡者之怒期间**进过战斗**（用于"战斗结束就退出亡者之怒"）。</summary>
+        private static bool _noelFurySawBattle;
         /// <summary>
         /// true = 亡者之怒已**锁死**（诺艾尔已经死亡）。
         /// 需求（2026-09-26 追加）：死亡之后不再走阈值判定 —— 否则魔物补刀时
@@ -12100,6 +12102,7 @@ namespace KnightInCradle.CharmUi
             _noelFuryBurstFired = false;
             _noelFuryDrainTimer = 0f;
             _noelFuryBurstFree = 0f;
+            _noelFurySawBattle = false;
             StopNoelFuryBgm();
         }
 
@@ -12119,8 +12122,25 @@ namespace KnightInCradle.CharmUi
                     _noelFuryLocked = false;
                     _noelFuryBurstFree = 0f;
                     _noelFuryDrainTimer = 0f;
+                    _noelFurySawBattle = false;
                     StopNoelFuryBgm();
                     return;
+                }
+                // 需求 2026-09-27：**战斗胜利（脱离战斗）后要结束亡者之怒**。
+                // 判据用 `IsInBattle()`（召唤区是否还在）；只有"本次亡者之怒期间确实进过战斗"
+                // 才会因战斗结束而退出，避免在野外触发时立刻被判定为"已脱离战斗"。
+                if (_noelFuryActive)
+                {
+                    bool inBattle = IsInBattle();
+                    if (inBattle)
+                    {
+                        _noelFurySawBattle = true;
+                    }
+                    else if (_noelFurySawBattle)
+                    {
+                        ReleaseNoelFuryForVanish();
+                        return;
+                    }
                 }
                 int hp = PrHpField != null ? (int)PrHpField.GetValue(pr) : 0;
                 // 需求（2026-09-26 追加）：**死亡之后锁住亡者之怒**。
