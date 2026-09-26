@@ -5129,6 +5129,262 @@ namespace KnightInCradle.CharmUi
 
         /// <summary>舞梦者：魔力吸取半径（格，最终数值写死在 DLL 里）。</summary>
         public const float DreamWielderMpDrainRadius = 5f;
+
+        // ==================== 护符38 梦之盾（诺艾尔侧，需求 2026-09-27） ====================
+        // 与小骑士那套一致：绕诺艾尔中心公转（半径 1.5 格），**咏唱魔法时转速加快**；
+        // 碰到敌人造成 30 点真实伤害（每只敌人"进入接触"只结算一次，离开再进才会再吃）。
+        private const float NoelShieldOrbitRadius = 1.5f;
+        private const float NoelShieldPeriodBase = 4f;      // 平时公转周期（秒）
+        private const float NoelShieldPeriodFast = 1f;      // 咏唱时公转周期（秒）
+        private const float NoelShieldSpeedChangeTime = 0.5f;
+        private const float NoelShieldContactRadius = 0.85f;
+        private const float NoelShieldDamage = 30f;         // 真实伤害
+        private const float NoelShieldRenderScale = 0.24f;
+        private static float _noelShieldAngle;
+        private static float _noelShieldOmega = 6.2831853f / NoelShieldPeriodBase;
+        private static float _noelShieldOmegaFrom = 6.2831853f / NoelShieldPeriodBase;
+        private static float _noelShieldOmegaTo = 6.2831853f / NoelShieldPeriodBase;
+        private static float _noelShieldSpeedT = 1f;
+        private static readonly HashSet<NelEnemy> _noelShieldContact = new HashSet<NelEnemy>();
+        private static readonly HashSet<object> _noelShieldGenericContact = new HashSet<object>();
+        private static Texture2D _noelShieldTex;
+        private static MeshDrawer _noelShieldMesh;
+        private static Material _noelShieldMat;
+        private static M2RenderTicket _noelShieldTicket;
+        private static Map2d _noelShieldMap;
+
+        /// <summary>每帧推进（诺艾尔模式调用）：梦之盾的公转 / 变速 / 接触伤害 / 票据维护。</summary>
+        public static void TickNoelDreamShieldCharm(PRNoel pr)
+        {
+            try
+            {
+                if (pr == null || IsKnightMode || !IsEquipped(CharmOwner.Noel, DreamShieldId))
+                {
+                    _noelShieldContact.Clear();
+                    _noelShieldGenericContact.Clear();
+                    ReleaseNoelShieldTicket();
+                    return;
+                }
+                EnsureNoelShieldTicket(pr);
+                float dt = Time.deltaTime;
+                // 咏唱魔法时（chant 动作 = 手里握着魔法蓄力）转速加快
+                bool chanting = IsNoelMagicChanting(pr);
+                float targetOmega = 6.2831853f / (chanting ? NoelShieldPeriodFast : NoelShieldPeriodBase);
+                if (Mathf.Abs(_noelShieldOmegaTo - targetOmega) > 0.0001f)
+                {
+                    _noelShieldOmegaFrom = _noelShieldOmega;
+                    _noelShieldOmegaTo = targetOmega;
+                    _noelShieldSpeedT = 0f;
+                }
+                if (_noelShieldSpeedT < 1f)
+                {
+                    _noelShieldSpeedT = Mathf.Min(1f, _noelShieldSpeedT + dt / NoelShieldSpeedChangeTime);
+                    _noelShieldOmega = Mathf.Lerp(_noelShieldOmegaFrom, _noelShieldOmegaTo, _noelShieldSpeedT);
+                }
+                else
+                {
+                    _noelShieldOmega = _noelShieldOmegaTo;
+                }
+                _noelShieldAngle += _noelShieldOmega * dt;
+
+                Map2d mp = pr.Mp;
+                if (mp == null)
+                {
+                    return;
+                }
+                float sx = pr.x + Mathf.Cos(_noelShieldAngle) * NoelShieldOrbitRadius;
+                float sy = pr.y + Mathf.Sin(_noelShieldAngle) * NoelShieldOrbitRadius + 0.5f;
+                int mask = NoelEnemyOverlapMask();
+                if (mask == 0)
+                {
+                    return;
+                }
+                Vector2 center = mp.gameObject.transform.TransformPoint(
+                    new Vector2(mp.pixel2ux(sx * mp.CLEN), mp.pixel2uy(sy * mp.CLEN)));
+                Collider2D[] hits = Physics2D.OverlapCircleAll(center, NoelShieldContactRadius, mask);
+                var inside = new HashSet<NelEnemy>();
+                for (int i = 0; i < hits.Length; i++)
+                {
+                    Collider2D c = hits[i];
+                    if (c == null)
+                    {
+                        continue;
+                    }
+                    NelEnemy en = c.GetComponentInParent<NelEnemy>();
+                    if (en == null)
+                    {
+                        // 非魔物目标（靶子/拳炮/路障）：进入接触也吃一次真实伤害
+                        TryDamageGenericTargetNoel(c, pr, (int)NoelShieldDamage, _noelShieldGenericContact);
+                        continue;
+                    }
+                    if (!en.is_alive || !inside.Add(en))
+                    {
+                        continue;
+                    }
+                    if (!_noelShieldContact.Contains(en))
+                    {
+                        ApplyNoelShieldContactDamage(pr, en);
+                    }
+                }
+                _noelShieldContact.Clear();
+                _noelShieldContact.UnionWith(inside);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>梦之盾接触伤害：固定 30 点真实伤害（fix_damage，不吃减伤/浮动）。</summary>
+        private static void ApplyNoelShieldContactDamage(PRNoel pr, NelEnemy enemy)
+        {
+            try
+            {
+                if (IsEnemySummoning(enemy))
+                {
+                    return;
+                }
+                int dmg = Mathf.Max(1, (int)NoelShieldDamage);
+                var atk = new NelAttackInfo();
+                atk.fix_damage = true;
+                atk.Caster = pr;
+                atk.AttackFrom = pr;
+                atk.PublishMagic = _lastNoelNailMg;
+                atk.hpdmg0 = dmg;
+                atk.hpdmg_current = dmg;
+                atk._apply_knockback_current = true;
+                atk.CenterXy(enemy.x, enemy.y, 0f);
+                enemy.applyDamage(atk, false);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>梦之盾：绑当前地图的 MovRenderer，画在诺艾尔身前层 PR1。</summary>
+        private static void EnsureNoelShieldTicket(PRNoel pr)
+        {
+            Map2d mp = pr != null ? pr.Mp : null;
+            if (mp == null)
+            {
+                return;
+            }
+            if (_noelShieldTex == null)
+            {
+                _noelShieldTex = LoadNoelShieldTexture();
+            }
+            if (_noelShieldTex == null)
+            {
+                return;
+            }
+            if (_noelShieldMesh != null && _noelShieldMap == mp && _noelShieldTicket != null)
+            {
+                return;
+            }
+            ReleaseNoelShieldTicket();
+            _noelShieldMap = mp;
+            _noelShieldMesh = new MeshDrawer(null, 4, 6);
+            _noelShieldMesh.draw_gl_only = true;
+            _noelShieldMat = MTRX.newMtr(MTRX.ShaderGDT);
+            _noelShieldMat.EnableKeyword("NO_PIXELSNAP");
+            _noelShieldMesh.activate("noel_dreamshield", _noelShieldMat, false, MTRX.ColWhite, null);
+            _noelShieldTicket = mp.MovRenderer.assignDrawable(
+                M2Mover.DRAW_ORDER.PR1, null, PrepareNoelShieldMesh, _noelShieldMesh, null, null);
+        }
+
+        private static void ReleaseNoelShieldTicket()
+        {
+            try
+            {
+                if (_noelShieldTicket != null && _noelShieldMap != null &&
+                    _noelShieldMap.MovRenderer != null)
+                {
+                    _noelShieldMap.MovRenderer.deassignDrawable(_noelShieldTicket, -1);
+                }
+            }
+            catch (Exception)
+            {
+            }
+            try
+            {
+                if (_noelShieldMat != null)
+                {
+                    IN.DestroyOne(_noelShieldMat);
+                }
+            }
+            catch (Exception)
+            {
+            }
+            _noelShieldTicket = null;
+            _noelShieldMesh = null;
+            _noelShieldMat = null;
+            _noelShieldMap = null;
+        }
+
+        /// <summary>读取小骑士同款素材 `assets/hk/sheets/shield/dreamshield.png`。</summary>
+        private static Texture2D LoadNoelShieldTexture()
+        {
+            try
+            {
+                string png = System.IO.Path.Combine(BepInEx.Paths.PluginPath, "KnightInCradle",
+                    "assets", "hk", "sheets", "shield", "dreamshield.png");
+                if (!System.IO.File.Exists(png))
+                {
+                    return null;
+                }
+                var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                if (!ImageConversion.LoadImage(tex, System.IO.File.ReadAllBytes(png)))
+                {
+                    return null;
+                }
+                tex.filterMode = FilterMode.Point;
+                tex.wrapMode = TextureWrapMode.Clamp;
+                return tex;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static bool PrepareNoelShieldMesh(Camera Cam, M2RenderTicket Tk, bool need_redraw,
+            int draw_id, out MeshDrawer MdOut, ref bool color_one_overwrite)
+        {
+            MdOut = null;
+            Map2d mp = _noelShieldMap;
+            if (mp == null || _noelShieldMesh == null || draw_id != 0)
+            {
+                return false;
+            }
+            _noelShieldMesh.clearSimple();
+            _noelShieldMesh.Identity();
+            PRNoel pr = KnightInCradleBehaviour.GetPrPublic();
+            if (pr == null || _noelShieldTex == null || IsKnightMode ||
+                !IsEquipped(CharmOwner.Noel, DreamShieldId))
+            {
+                MdOut = _noelShieldMesh;
+                return true;
+            }
+            float c = mp.CLEN;
+            float px = (pr.x + Mathf.Cos(_noelShieldAngle) * NoelShieldOrbitRadius) * c;
+            float py = (pr.y + Mathf.Sin(_noelShieldAngle) * NoelShieldOrbitRadius + 0.5f) * c;
+            Tk.Matrix = mp.gameObject.transform.localToWorldMatrix *
+                        Matrix4x4.Translate(new Vector3(mp.pixel2ux(pr.x * c), mp.pixel2uy(pr.y * c), 0f));
+            _noelShieldMesh.Col = MTRX.ColWhite;
+            _noelShieldMesh.initForImgAndTexture(_noelShieldTex);
+            _noelShieldMesh.uv_top = 0f;
+            _noelShieldMesh.uv_height = 1f;
+            _noelShieldMesh.uv_left = 0f;
+            _noelShieldMesh.uv_width = 1f;
+            float w = _noelShieldTex.width * NoelShieldRenderScale;
+            float h = _noelShieldTex.height * NoelShieldRenderScale;
+            Matrix4x4 savedM = _noelShieldMesh.getCurrentMatrix();
+            _noelShieldMesh.Translate((px - pr.x * c) * 0.015625f, -(py - pr.y * c) * 0.015625f, true);
+            _noelShieldMesh.Rotate(_noelShieldAngle, true);
+            _noelShieldMesh.Rect(-w * 0.5f, -h * 0.5f, w, h, false);
+            _noelShieldMesh.setCurrentMatrix(savedM, false);
+            MdOut = _noelShieldMesh;
+            return true;
+        }
         private static bool TryDamageGenericTargetNoel(Collider2D c, PRNoel pr, int dmg, Dictionary<object, float> nextHit, float now, float interval)
         {
             try
