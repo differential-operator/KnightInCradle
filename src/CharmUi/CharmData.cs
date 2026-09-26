@@ -180,16 +180,16 @@ namespace KnightInCradle.CharmUi
             new CharmData { Id = 36, KName = "编织者之歌", KDesc = "一个缠丝的护符，蕴含着那些离开圣巢返回家乡的编织者所留下的离别之歌。\n\n召唤三只小小的编织者幼体攻击敌人。这些编织者在故乡的灾难中幸存，拥有更强的力量。", KCost = 2, IconFile = "36_spider", Name = "编织者之歌", Cost = 2,
                 Desc = "从洞穴里找到的小蜘蛛，跟随并保护救出它们的持有者。\n\n它们没有魔物的那种器官，是从哪里来的呢？" },
             // 37〜39（+41 国王之魂）按 `docs/护符效果描述.md`：**可选中但无法佩戴**，只给"未解锁"文案。
-            // 37〜41：可选中但**不能佩戴**，费用显示"？"（需求 2026-09-27）
-            new CharmData { Id = 37, KName = "舞梦者", KDesc = "专门给挥动梦之钉和收集精华的人准备的护符。用梦之钉击中敌人获得的灵魂增加，同时使用梦之钉攻击速度加快。\n\n这里的生物虽使用魔力，但仍然具有灵魂和鲜活的梦境。", KCost = 1, IconFile = "37_dream", Name = "舞梦者", Cost = -1, NoEquip = true,
-                Desc = "童话里的传说护符，难以仿制。" },
-            new CharmData { Id = 38, KName = "梦之盾", KDesc = "生成一面缓慢围绕持有者旋转的盾牌，对敌人造成与当前骨钉相等的接触伤害。\n\n这个护符蕴含了伟大战士的精神力，在持有者凝聚时会尽力保护持有者。", KCost = 3, IconFile = "38_dream_protecter", Name = "梦之盾", Cost = -1, NoEquip = true,
-                Desc = "童话里的传说武器，难以仿制。" },
-            new CharmData { Id = 39, KName = "格林之子", KDesc = "一场完成的仪式的标志。包含着一团跳动的猩红之火。\n\n火焰必须燃烧，梦魇终将再临。", KCost = 2, IconFile = "39_Grimm", Name = "格林之子", Cost = -1, NoEquip = true,
-                Desc = "童话里带来梦魇的恶魔，很多小孩子都喜欢这个恐怖又优雅的角色。" },
+            // 37/38/39/41：诺艾尔侧已实装（需求 2026-09-27），可正常佩戴；小骑士侧仍用 KName/KDesc/KCost。
+            new CharmData { Id = 37, KName = "舞梦者", KDesc = "专门给挥动梦之钉和收集精华的人准备的护符。用梦之钉击中敌人获得的灵魂增加，同时使用梦之钉攻击速度加快。\n\n这里的生物虽使用魔力，但仍然具有灵魂和鲜活的梦境。", KCost = 1, IconFile = "37_dream", Name = "舞梦者", Cost = 5,
+                Desc = "传说蛾族战士们曾佩戴这种印记。\n\n对圣光爆发进行了改造，能够吸收周围魔物的魔力。" },
+            new CharmData { Id = 38, KName = "梦之盾", KDesc = "生成一面缓慢围绕持有者旋转的盾牌，对敌人造成与当前骨钉相等的接触伤害。\n\n这个护符蕴含了伟大战士的精神力，在持有者凝聚时会尽力保护持有者。", KCost = 3, IconFile = "38_dream_protecter", Name = "梦之盾", Cost = 3,
+                Desc = "传说蛾族战士们曾使用这种武器，攻防兼备。\n\n对格拉提亚商店里卖的周边玩具做了改造，现在它能像童话里那样保护持有者了！" },
+            new CharmData { Id = 39, KName = "格林之子", KDesc = "一场完成的仪式的标志。包含着一团跳动的猩红之火。\n\n火焰必须燃烧，梦魇终将再临。", KCost = 2, IconFile = "39_Grimm", Name = "格林之子", Cost = 2,
+                Desc = "童话里带来梦魇的恶魔，很多小孩子都喜欢这个恐怖又优雅的角色。\n\n对格拉提亚商店里卖的周边玩具做了改造，赋予其智能索敌技术。" },
             new CharmData { Id = 40, KName = "虚空之心", KDesc = "隐藏在内部的空虚，现在不再受到约束。使虚空在持有者的意志下联合起来。\n\n这个护符是持有者的一部分，不能卸下。", KCost = 0, IconFile = "40_VOID", Name = "虚空之心", Desc = "隐藏在内部的空虚，现在不再受到约束。使虚空在持有者的意志下联合起来。\n\n这个护符是持有者的一部分，不能卸下。", Cost = 0 },
-            new CharmData { Id = 41, KName = "国王之魂", KDesc = "象征着高等生灵相互结合的圣洁护符。\n\n持有者能缓慢吸收其中无限的灵魂。", KCost = 5, IconFile = "41_KING", Name = "国王之魂", Cost = -1, NoEquip = true,
-                Desc = "童话里的苍白之王，他的王国万世长存。" },
+            new CharmData { Id = 41, KName = "国王之魂", KDesc = "象征着高等生灵相互结合的圣洁护符。\n\n持有者能缓慢吸收其中无限的灵魂。", KCost = 5, IconFile = "41_KING", Name = "国王之魂", Cost = 5,
+                Desc = "童话里的苍白之王，他的王国万世长存，能使持有者吸收其中无限的灵魂。\n\n只是一个超大的魔力背包..." },
             new CharmData { Id = 43, KName = "无忧旋律", KDesc = "纪念一份友谊建立的信物。包含一首可能使持有者免受伤害的守护之歌。", KCost = 3, IconFile = "42_tune", Name = "无忧旋律", Desc = "纪念一份友谊建立的信物。包含一首可能使持有者免受伤害的守护之歌。", Cost = 3 },
             new CharmData { Id = 42, KName = "束缚", KDesc = "", KCost = 0, IconFile = "gg_godseeker_mode_selector", Name = "束缚", Desc = "", Cost = 0 },
         };
