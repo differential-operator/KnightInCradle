@@ -5100,12 +5100,14 @@ namespace KnightInCradle.CharmUi
                         // 需求 2026-09-27：清空敌人魔力的同时，把等量的魔力补给诺艾尔
                         try
                         {
-                            drainedTotal += Mathf.Max(0f, (float)PrMpField.GetValue(en));
+                            drainedTotal += Mathf.Max(0f, en.get_mp());
                         }
                         catch (Exception)
                         {
                         }
-                        PrMpField.SetValue(en, 0f); // M2Attackable.mp
+                        // 照搬小骑士"梦之钉"的做法：`enemy.applyMpDamage(99999, true, null)`
+                        // （原来直接写 M2Attackable.mp 字段没用——敌人实际取值不走那个字段）
+                        en.applyMpDamage(99999, true, null);
                         en.addF(NelEnemy.FLAG.FINE_HPMP_BAR);
                     }
                     catch (Exception)
@@ -7261,6 +7263,14 @@ namespace KnightInCradle.CharmUi
                 {
                     return false;
                 }
+                // 护符37 舞梦者（需求 2026-09-27）：诺艾尔进入**圣光爆发**状态的那一刻，
+                // 吸干 5 格内魔物的魔力并把等量魔力补给自己（挂这里比挂 executeSmallAttack 稳，
+                // 玩家手动爆发与亡者之怒自动爆发两条路都会经过 changeState）。
+                if (_state == PR.STATE.BURST && __instance is PRNoel && !IsKnightMode &&
+                    IsEquipped(CharmOwner.Noel, DreamId))
+                {
+                    ClearEnemyMpAroundNoel();
+                }
                 if (_state != PR.STATE.DAMAGE_LT && _state != PR.STATE.DAMAGE_LT_KIRIMOMI)
                 {
                     return true;
@@ -9087,10 +9097,6 @@ namespace KnightInCradle.CharmUi
                         // 护符18 修长之钉（诺艾尔侧）：登记一道白色弧带（长度=判定触及距离）
                         harmony.Patch(smallAttack, postfix: new HarmonyMethod(
                             typeof(CharmEffects).GetMethod(nameof(LongNailSmallAttackPostfix),
-                                BindingFlags.Static | BindingFlags.NonPublic)));
-                        // 护符37 舞梦者（诺艾尔侧）：圣光爆发时清空周围 5 格内魔物的魔力
-                        harmony.Patch(smallAttack, postfix: new HarmonyMethod(
-                            typeof(CharmEffects).GetMethod(nameof(DreamWielderSmallAttackPostfix),
                                 BindingFlags.Static | BindingFlags.NonPublic)));
                     }
                 // 护符18 修长之钉（诺艾尔侧）：判定侧——手杖 reach 倍率 + 总触及距离精确补足
