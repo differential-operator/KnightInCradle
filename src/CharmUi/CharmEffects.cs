@@ -4500,7 +4500,7 @@ namespace KnightInCradle.CharmUi
         private static bool _nmTapWasRun;
         // ---- 旋风斩：无敌窗口 + 自绘圆形判定箱 ----
         /// <summary>圆内敌人的"下次可再吃一次伤害"的时刻（`Time.time`）。</summary>
-        private static readonly HashSet<object> _nmCircleGenericDone = new HashSet<object>();
+        private static readonly Dictionary<object, float> _nmCircleGenericNextHit = new Dictionary<object, float>();
         private static readonly Dictionary<NelEnemy, float> _nmCircleNextHit =
             new Dictionary<NelEnemy, float>();
         private static Texture2D _nmCircleTex;
@@ -4837,7 +4837,7 @@ namespace KnightInCradle.CharmUi
                 }
             }
             _nmCircleNextHit.Clear();
-            _nmCircleGenericDone.Clear();
+            _nmCircleGenericNextHit.Clear();
             try
             {
                 ReleaseNailMasterCircleTicket();
@@ -4924,7 +4924,7 @@ namespace KnightInCradle.CharmUi
                     {
                         // 非魔物目标（靶子/拳炮/路障）：按同一固定伤害打一次
                         int gdmg = _noelFuryActive ? NailMasterSpinDamageFury : (IsEquipped(CharmOwner.Noel, PowerId) ? NailMasterSpinDamagePower : NailMasterSpinDamageBase);
-                        TryDamageGenericTargetNoel(c, pr, gdmg, _nmCircleGenericDone);
+                        TryDamageGenericTargetNoel(c, pr, gdmg, _nmCircleGenericNextHit, now, interval);
                         continue;
                     }
                     float nextHit;
@@ -4961,7 +4961,7 @@ namespace KnightInCradle.CharmUi
         /// （`KnightEntity.cs:24713`），所以这里复用小骑士那套做法（`TryHitGenericAttackable`）。
         /// 返回 true 表示该碰撞体已被本分支处理（调用方应 continue）。
         /// </summary>
-        private static bool TryDamageGenericTargetNoel(Collider2D c, PRNoel pr, int dmg, HashSet<object> dedup)
+        private static bool TryDamageGenericTargetNoel(Collider2D c, PRNoel pr, int dmg, Dictionary<object, float> nextHit, float now, float interval)
         {
             try
             {
@@ -4974,9 +4974,15 @@ namespace KnightInCradle.CharmUi
                 {
                     return false; // 魔物走原来的路
                 }
-                if (dedup != null && !dedup.Add(a))
+                // 与魔物同款：同一目标每 interval 秒才吃一次（而不是整招只吃一次）
+                float tNext;
+                if (nextHit != null && nextHit.TryGetValue(a, out tNext) && now < tNext)
                 {
-                    return true; // 这一招已经打过它
+                    return true;
+                }
+                if (nextHit != null)
+                {
+                    nextHit[a] = now + interval;
                 }
                 var atk = new NelAttackInfo();
                 atk.hpdmg0 = dmg;
