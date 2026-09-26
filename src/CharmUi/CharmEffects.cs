@@ -1624,7 +1624,6 @@ namespace KnightInCradle.CharmUi
                 // 世界坐标的圆只用来粗筛，真正的"3 格"用地图坐标复核（grid = 1.0）
                 Collider2D[] hits = Physics2D.OverlapCircleAll(center, radius, mask);
                 var done = new HashSet<NelEnemy>();
-                float drainedTotal = 0f;
                 for (int i = 0; i < hits.Length; i++)
                 {
                     Collider2D c = hits[i];
@@ -5077,6 +5076,7 @@ namespace KnightInCradle.CharmUi
                     new Vector2(mp.pixel2ux(pr.x * mp.CLEN), mp.pixel2uy(pr.y * mp.CLEN)));
                 Collider2D[] hits = Physics2D.OverlapCircleAll(center, radius, mask);
                 var done = new HashSet<NelEnemy>();
+                float drainedTotal = 0f; // 需求：清空敌人魔力的同时把等量魔力补给诺艾尔
                 for (int i = 0; i < hits.Length; i++)
                 {
                     Collider2D c = hits[i];
