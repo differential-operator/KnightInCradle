@@ -5215,15 +5215,33 @@ namespace KnightInCradle
         }
 
         /// <summary>蜕变挽歌：满血普攻播放到 slashes_effect0001 帧时向前发射剑气。</summary>
-        private void SpawnElegyBlade()
+        private void SpawnElegyBlade(float dirY = 0f)
         {
             _elegySpawnedThisSwing = true;
             float dir = -_faceDir; // _faceDir=1 脸朝左（-X），-1 脸朝右（+X）
+            // 需求 2026-09-27：上劈/下劈时向对应方向发射剑气（贴图按是否佩戴修长之钉/骄傲印记切换）
+            string sprite;
+            bool mantis = CharmEffects.IsEquipped(CharmEffects.LongNailId) ||
+                          CharmEffects.IsEquipped(CharmEffects.PrideId);
+            if (dirY < 0f)
+            {
+                sprite = mantis ? "mantis_up_slash0000" : "up_slash_effect0000";
+            }
+            else if (dirY > 0f)
+            {
+                sprite = mantis ? "mantis_down_slash0001" : "down_slash_effect0001";
+            }
+            else
+            {
+                sprite = FuryActive ? "rage_slash_left0001" : "slashes_effect0001";
+            }
             _elegyBlades.Add(new ElegyBladeProj
             {
-                X = X + HurtCenterX + dir * 0.5f, // 从骑士中心略前方发射
+                X = X + HurtCenterX + (dirY == 0f ? dir * 0.5f : 0f), // 水平：中心略前方；垂直：正上/正下
                 Y = Y + HurtCenterY - 0.5f, // 渲染与判定箱整体上移 0.5 格
-                Dir = dir,
+                Dir = dirY == 0f ? dir : 0f,
+                DirY = dirY,
+                Sprite = sprite,
                 Traveled = 0f
             });
             DashAudio.PlayElegyBlade(); // 发射音效（soul_totem_slash，已裁掉倒放后半段）
@@ -5243,6 +5261,7 @@ namespace KnightInCradle
                 ElegyBladeProj p = _elegyBlades[bi];
                 float step = ElegyBladeSpeed * sdt;
                 p.X += p.Dir * step;
+                p.Y += p.DirY * step;
                 p.Traveled += step;
                 CheckElegyBladeHit(p);
                 if (p.Traveled >= ElegyBladeRange)
@@ -5264,19 +5283,34 @@ namespace KnightInCradle
             {
                 return;
             }
-            // 判定框：向下 0.5 格；向左发射 x-1.2 格、向右发射 x+0.2 格
-            float hx = p.X + (p.Dir < 0f ? -1.2f : 0.2f);
-            float hy = p.Y + 0.5f;
+            // 判定框：水平剑气向下 0.5 格（向左发射 x-1.2、向右 x+0.2）；
+            // 上下劈剑气改成"沿飞行方向前后各 1 格、横向加宽"，尺寸与水平剑气互换。
+            float hx;
+            float hy;
+            float boxW = ElegyBladeHitboxW;
+            float boxH = ElegyBladeHitboxH;
+            if (p.DirY != 0f)
+            {
+                hx = p.X;
+                hy = p.Y + (p.DirY < 0f ? -1f : 1f);
+                boxW = ElegyBladeHitboxH;
+                boxH = ElegyBladeHitboxW;
+            }
+            else
+            {
+                hx = p.X + (p.Dir < 0f ? -1.2f : 0.2f);
+                hy = p.Y + 0.5f;
+            }
             // 蜕变挽歌剑气：沿途破坏魔力草（+4 灵魂，与普攻一致，每株草只结算一次）
-            BreakManaWeeds(p.Hits, hx, hy, ElegyBladeHitboxW * 0.5f, ElegyBladeHitboxH * 0.5f);
+            BreakManaWeeds(p.Hits, hx, hy, boxW * 0.5f, boxH * 0.5f);
             // 蜕变挽歌剑气：可破坏蜘蛛陷阱（蛛丝球释放源，与普攻/技艺一致）
             DestroySpiderTrapsInBox(new Vector2(hx, hy),
-                ElegyBladeHitboxW * 0.5f, ElegyBladeHitboxH * 0.5f);
+                boxW * 0.5f, boxH * 0.5f);
             float mx = _mp.pixel2ux(hx * _mp.CLEN);
             float my = _mp.pixel2uy(hy * _mp.CLEN);
             Vector2 center = _mp.gameObject.transform.TransformPoint(new Vector2(mx, my));
             Collider2D[] hits = Physics2D.OverlapBoxAll(center,
-                new Vector2(ElegyBladeHitboxW, ElegyBladeHitboxH), 0f, mask);
+                new Vector2(boxW, boxH), 0f, mask);
             int elegyDmg = ElegyBladeDamageNow();
             for (int i = 0; i < hits.Length; i++)
             {
@@ -9535,6 +9569,8 @@ namespace KnightInCradle
             public float X;           // 格坐标
             public float Y;
             public float Dir;         // 1=右, -1=左
+            public float DirY;        // 0=水平；-1=向上；1=向下（网格 y 向下为正）
+            public string Sprite;     // 这一道剑气用的贴图名（上/下劈与横劈不同）
             public float Traveled;    // 已飞行距离（格）
             public readonly HashSet<object> Hits = new HashSet<object>(); // 每只敌人只结算一次
         }
@@ -18572,10 +18608,19 @@ namespace KnightInCradle
                 return false;
             }
             _elegyBladeMesh.clearSimple();
-            // 羁绊：蜕变挽歌 + 亡者之怒 —— 狂怒状态（1 血）剑气用 rage_slash_left0001
-            string elegySprite = FuryActive ? "rage_slash_left0001" : "slashes_effect0001";
-            if (_elegyBlades.Count == 0 ||
-                !_textures.TryGetValue(elegySprite, out Texture2D tex))
+            if (_elegyBlades.Count == 0)
+            {
+                MdOut = _elegyBladeMesh;
+                return true;
+            }
+            // 羁绊：蜕变挽歌 + 亡者之怒 —— 狂怒状态（1 血）横劈剑气用 rage_slash_left0001；
+            // 上/下劈剑气用各自贴图（佩戴修长之钉/骄傲印记时为螳螂爪样式），见 SpawnElegyBlade。
+            string elegySprite = _elegyBlades[0].Sprite;
+            if (string.IsNullOrEmpty(elegySprite))
+            {
+                elegySprite = FuryActive ? "rage_slash_left0001" : "slashes_effect0001";
+            }
+            if (!_textures.TryGetValue(elegySprite, out Texture2D tex))
             {
                 MdOut = _elegyBladeMesh;
                 return true;
@@ -23031,6 +23076,14 @@ namespace KnightInCradle
                  (FuryActive && spriteName == "rage_slash_left0001")))
             {
                 SpawnElegyBlade();
+            }
+            // 需求 2026-09-27：上劈/下劈也发射剑气（同一节奏：挥砍特效播到第 2 帧时发射；
+            // 贴图与判定方向由 SpawnElegyBlade 按方向选择）。条件与横劈一致：满血（或狂怒状态）。
+            if (!_elegySpawnedThisSwing && _attacking && (_upSlash || _downSlash) &&
+                CharmEffects.IsEquipped(CharmEffects.ElegyId) &&
+                (_health >= MaxHealth || FuryActive) && _fxFrameIndex >= 1)
+            {
+                SpawnElegyBlade(_upSlash ? -1f : 1f);
             }
             if (_textures.TryGetValue(spriteName, out Texture2D tex))
             {
