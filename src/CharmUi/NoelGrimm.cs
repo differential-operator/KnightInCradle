@@ -498,38 +498,17 @@ namespace KnightInCradle.CharmUi
             vy = 0f;
             try
             {
-                // M2Mover.Phy 是 protected：反射读当前速度（格/帧@60，与骑士的 Vx/Vy 同单位）
-                if (_phyField == null)
-                {
-                    _phyField = HarmonyLib.AccessTools.Field(typeof(M2Mover), "Phy");
-                }
-                object phy = _phyField != null ? _phyField.GetValue(pr) : null;
-                if (phy == null)
-                {
-                    return;
-                }
-                if (_walkXsField == null)
-                {
-                    _walkXsField = HarmonyLib.AccessTools.Field(phy.GetType(), "walk_xspeed");
-                    _walkYsField = HarmonyLib.AccessTools.Field(phy.GetType(), "walk_yspeed");
-                }
-                if (_walkXsField != null)
-                {
-                    vx = (float)_walkXsField.GetValue(phy);
-                }
-                if (_walkYsField != null)
-                {
-                    vy = (float)_walkYsField.GetValue(phy);
-                }
+                // M2Mover 有 public 的 `vx` / `vy`（格/帧@60，与骑士侧那个 Vx 同单位）——
+                // 之前走反射读 M2Phys.walk_xspeed 读不到，导致 vx 恒为 0、跟随速度被压到 2.5 格/秒。
+                vx = pr.vx;
+                vy = pr.vy;
             }
             catch (Exception)
             {
+                vx = 0f;
+                vy = 0f;
             }
         }
-
-        private static System.Reflection.FieldInfo _phyField;
-        private static System.Reflection.FieldInfo _walkXsField;
-        private static System.Reflection.FieldInfo _walkYsField;
 
         private static float SleepGroundY(PRNoel pr)
         {
