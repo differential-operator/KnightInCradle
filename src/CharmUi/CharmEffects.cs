@@ -12515,6 +12515,49 @@ namespace KnightInCradle.CharmUi
         /// 必须高于触发阈值（`FuryHpThreshold`，默认 30），否则下一帧会立刻再次进入亡者之怒。
         /// </summary>
         public const int FuryVictoryRestoreHp = 40;
+
+        // ================= 护符3 坚硬外壳 + 护符20 亡者之怒 的组合规则（2026-09-27） =================
+        /// <summary>
+        /// 组合期间亡者之怒的触发血量：坚硬外壳把上限压成次数血，HP 常年 &lt; 30，
+        /// 所以改成"**HP 掉到 1** 时触发"。
+        /// </summary>
+        public const int SturdyFuryTriggerHp = 1;
+        /// <summary>组合期间触发亡者之怒后的死亡倒计时（秒）。</summary>
+        public const float SturdyFuryLimitSeconds = 60f;
+        /// <summary>组合倒计时剩余秒数（&gt;0 表示正在计时）。</summary>
+        private static float _noelSturdyFuryTimer;
+
+        /// <summary>
+        /// 护符3 坚硬外壳与护符20 亡者之怒是否**同时生效**（乔尼祝福期间外壳让位，不算组合）。
+        /// </summary>
+        private static bool NoelSturdyFuryCombo(PRNoel pr)
+        {
+            return pr != null &&
+                   IsEquipped(CharmOwner.Noel, SturdyId) &&
+                   IsEquipped(CharmOwner.Noel, FuryId) &&
+                   !JoniBlessingActive(pr);
+        }
+
+        /// <summary>组合期间强制判死（和"流失到 0"走同一条原版死亡通道）。</summary>
+        private static void KillNoelBySturdyFury(PRNoel pr)
+        {
+            try
+            {
+                _noelSturdyFuryTimer = 0f;
+                _noelFuryActive = false; // 先落状态，避免被自己的判定卷住
+                _noelFuryLocked = true;  // 死即锁亡者之怒
+                _noelFuryDying = true;
+                pr.applyHpDamage(9999, true, null);
+            }
+            catch (Exception)
+            {
+            }
+            finally
+            {
+                _noelFuryDying = false;
+            }
+            RefreshNoelHudHp();
+        }
         /// <summary>
         /// true = 亡者之怒已**锁死**（诺艾尔已经死亡）。
         /// 需求（2026-09-26 追加）：死亡之后不再走阈值判定 —— 否则魔物补刀时
@@ -12780,7 +12823,9 @@ namespace KnightInCradle.CharmUi
                 {
                     return false;
                 }
-                int threshold = KnightInCradlePlugin.FuryHpThreshold;
+                // 需求 2026-09-27：与护符3 坚硬外壳同时佩戴时，触发线从"低于 30"改成"HP 掉到 1"
+                bool sturdyCombo = NoelSturdyFuryCombo(noel);
+                int threshold = sturdyCombo ? SturdyFuryTriggerHp : KnightInCradlePlugin.FuryHpThreshold;
                 int hp = (int)PrHpField.GetValue(noel);
                 // 需求（2026-09-26 追加）：死亡之后锁住亡者之怒 —— HP 已经是 0（或刚判定死亡）时
                 // 直接返回，绝不再把 HP 写回阈值。
@@ -12793,11 +12838,20 @@ namespace KnightInCradle.CharmUi
                     }
                     return false;
                 }
-                if (hp - val >= threshold)
+                // 组合：坚硬外壳会把这一次伤害改写成 0（≤20）/ 1（>20），用改写后的值判断能否打到触发线
+                int dealt = sturdyCombo
+                    ? (val <= SturdyDamageThreshold ? 0 : 1)
+                    : val;
+                if (hp - dealt >= threshold)
                 {
                     return false; // 这一下打不到阈值以下
                 }
                 val = 0; // 伤害不结算
+                if (sturdyCombo)
+                {
+                    // 组合触发时同样给外壳的 2 秒无敌（这条路绕过了外壳自己的改写分支）
+                    GrantNoelInvincible(noel, SturdyInvincibleFrames);
+                }
                 // 需求：触发时 HP **直接设为阈值（默认 30）**（不是"回到不低于 30"）
                 PrHpField.SetValue(noel, threshold);
                 RefreshNoelHudHp();
@@ -12861,6 +12915,7 @@ namespace KnightInCradle.CharmUi
             _noelFuryDrainTimer = 0f;
             _noelFuryBurstFree = 0f;
             _noelFurySawBattle = false;
+            _noelSturdyFuryTimer = 0f; // 组合倒计时：胜利 / 坐椅子退出时一并清零
             StopNoelFuryBgm();
         }
 
@@ -12881,9 +12936,13 @@ namespace KnightInCradle.CharmUi
                     _noelFuryBurstFree = 0f;
                     _noelFuryDrainTimer = 0f;
                     _noelFurySawBattle = false;
+                    _noelSturdyFuryTimer = 0f;
                     StopNoelFuryBgm();
                     return;
                 }
+                // 组合判据（护符3 坚硬外壳 + 护符20 亡者之怒）：触发线 = HP 1
+                bool sturdyCombo = NoelSturdyFuryCombo(pr);
+                int furyThreshold = sturdyCombo ? SturdyFuryTriggerHp : KnightInCradlePlugin.FuryHpThreshold;
                 // 需求 2026-09-27：**战斗胜利（脱离战斗）后要结束亡者之怒**。
                 // 判据用 `IsInBattle()`（召唤区是否还在）；只有"本次亡者之怒期间确实进过战斗"
                 // 才会因战斗结束而退出，避免在野外触发时立刻被判定为"已脱离战斗"。
@@ -12925,7 +12984,7 @@ namespace KnightInCradle.CharmUi
                     _noelFuryLocked = true;
                 }
                 else if (_noelFuryLocked &&
-                         (hp > KnightInCradlePlugin.FuryHpThreshold || IsNoelOnBench(pr)))
+                         (hp > furyThreshold || IsNoelOnBench(pr)))
                 {
                     _noelFuryLocked = false;
                 }
@@ -12951,9 +13010,10 @@ namespace KnightInCradle.CharmUi
                 }
                 bool wasActive = _noelFuryActive;
                 // 亡者之怒的"在状态中"判据：HP ≤ 阈值（回到阈值之上就结束）
-                _noelFuryActive = !_noelFuryLocked && hp <= KnightInCradlePlugin.FuryHpThreshold;
+                _noelFuryActive = !_noelFuryLocked && hp <= furyThreshold;
                 if (!_noelFuryActive)
                 {
+                    _noelSturdyFuryTimer = 0f; // 退出亡者之怒：组合倒计时一并作废（胜利/坐椅子走到这里）
                     // 需求（2026-09-26 追加）效果4：亡者之怒期间用道具/其它手段把 HP 回到阈值之上就**退出**，
                     // 之后再掉回阈值（哪怕正好 30）还能重新触发 —— 所以这里只清"本次激活"的痕迹，不上死亡锁。
                     StopNoelFuryBgm();
@@ -12993,6 +13053,28 @@ namespace KnightInCradle.CharmUi
                 }
                 catch (Exception)
                 {
+                }
+                // 护符3+20 组合（2026-09-27）：坚硬外壳下亡者之怒由"HP=1"触发，
+                // 触发后开始 60 秒倒计时：期间 HP 锁在 1（不跑"每 2 秒 -1"的流失），
+                // 60 秒内没赢下战斗（HP 回到 1 之上 / 退出亡者之怒）或坐椅子 → 直接判死。
+                if (sturdyCombo)
+                {
+                    if (hp != SturdyFuryTriggerHp)
+                    {
+                        PrHpField.SetValue(pr, SturdyFuryTriggerHp);
+                        RefreshNoelHudHp();
+                        hp = SturdyFuryTriggerHp;
+                    }
+                    if (_noelSturdyFuryTimer <= 0f)
+                    {
+                        _noelSturdyFuryTimer = SturdyFuryLimitSeconds;
+                    }
+                    _noelSturdyFuryTimer -= Time.deltaTime;
+                    if (_noelSturdyFuryTimer <= 0f)
+                    {
+                        KillNoelBySturdyFury(pr);
+                    }
+                    return; // 组合期间不走 HP 流失
                 }
                 // 效果4：HP 随时间流失（每 DrainSeconds 秒 -DrainAmount），归零走原版死亡
                 float interval = Mathf.Max(0.1f, KnightInCradlePlugin.FuryDrainSeconds);

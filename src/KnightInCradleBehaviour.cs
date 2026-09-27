@@ -21,8 +21,9 @@ namespace KnightInCradle
         /// 配合后面的 `dll=路径 (文件时间)` 可以立刻确认游戏实际加载的是哪一份 DLL。
         /// </summary>
         // 2026-09-27.42：护符槽配方标记为"已知"（CInfo.obtain_flag）→ 才会出现在炼金列表里
-        // 2026-09-27.53：切回小骑士时统一释放诺艾尔护符的渲染票据（法阵/梦之盾/小编织者/格林之子残留）
-        internal const string SelfBuildTag = "2026-09-27.53";
+        // 2026-09-27.54：护符3 坚硬外壳 + 20 亡者之怒 组合：触发线改成 HP=1，触发后 60 秒倒计时，
+        // 期间没胜利/没坐椅子则判死（期间不流失 HP）
+        internal const string SelfBuildTag = "2026-09-27.54";
 
         private static bool _harmonyApplied;
         private static bool _seriousInitApplied; // 启动时是否已应用过一次布局（防止残留居中布局）
