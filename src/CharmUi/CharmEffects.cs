@@ -936,8 +936,12 @@ namespace KnightInCradle.CharmUi
         // ================= 护符10 蜕变挽歌（诺艾尔侧） =================
         /// <summary>剑气飞行速度（格/秒）——与小骑士的挽歌剑气一致。</summary>
         public const float ElegySpeed = 30f;
-        /// <summary>剑气射程（格）。（2026-09-22 二稿：4 → 8）</summary>
-        public const float ElegyRange = 8f;
+        /// <summary>
+        /// 剑气距离上限（格）——**只作兜底**（2026-09-27：改成与小骑士一致，
+        /// 飞出房间（摄像机可视范围）才消失，不再有 8 格射程限制，也不限制同时存在的数量；
+        /// 这个 60 格仅防止极端情况下剑气永久残留）。
+        /// </summary>
+        public const float ElegyMaxRange = 60f;
         /// <summary>剑气判定箱（世界单位）——与小骑士一致。</summary>
         public const float ElegyHitboxW = 2.0f;
         public const float ElegyHitboxH = 1.4f;
@@ -1097,7 +1101,20 @@ namespace KnightInCradle.CharmUi
                         b.X += b.Dir * step;
                         b.Traveled += step;
                         CheckNoelElegyHit(pr, b);
-                        if (b.Traveled >= ElegyRange)
+                        // 需求 2026-09-27：取消 8 格射程限制 —— 与小骑士一致，
+                        // 剑气飞出房间（摄像机可视范围）才清掉，同一时间可以存在很多道剑气。
+                        bool outsideRoom = false;
+                        try
+                        {
+                            Map2d mpBlade = pr.Mp;
+                            outsideRoom = mpBlade != null &&
+                                          !mpBlade.isinCamera(b.X, b.Y, 0f, 0f, 6f * mpBlade.CLEN);
+                        }
+                        catch (Exception)
+                        {
+                            outsideRoom = false;
+                        }
+                        if (outsideRoom || b.Traveled >= ElegyMaxRange)
                         {
                             _noelElegyBlades.RemoveAt(i);
                         }
