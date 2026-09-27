@@ -1,0 +1,61 @@
+                loopStart = 0,
+                frames = frames.ToArray()
+            };
+        }
+
+        /// <summary>护符38 梦之盾素材：读取 sheets/shield/dreamshield.png 单张贴图。</summary>
+        private void LoadDreamShieldAssets()
+        {
+            try
+            {
+                string png = Path.Combine(Paths.PluginPath, "KnightInCradle", "assets", "hk",
+                    "sheets", "shield", "dreamshield.png");
+                if (!File.Exists(png))
+                {
+                    return;
+                }
+                var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                if (!ImageConversion.LoadImage(tex, File.ReadAllBytes(png)))
+                {
+                    return;
+                }
+                tex.filterMode = FilterMode.Point;
+                tex.wrapMode = TextureWrapMode.Clamp;
+                _textures["dreamshield"] = tex;
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>护符39 格林之子素材：读取 sheets/grimm 下的 Grimmbat_* 帧并注册剪辑。</summary>
+        private void LoadGrimmAssets()
+        {
+            try
+            {
+                string dir = Path.Combine(Paths.PluginPath, "KnightInCradle", "assets", "hk",
+                    "sheets", "grimm");
+                if (!Directory.Exists(dir))
+                {
+                    return;
+                }
+                var wanted = new Dictionary<string, string[]>
+                {
+                    ["GrimmAppear"] = new[] { "Grimmbat_turn0000", "Grimmbat_turn0001" },
+                    ["GrimmIdle"] = new[]
+                    {
+                        "Grimmbat_idle0000", "Grimmbat_idle0001", "Grimmbat_idle0002",
+                        "Grimmbat_idle0003", "Grimmbat_idle0004", "Grimmbat_idle0005"
+                    },
+                    ["GrimmFly"] = new[]
+                    {
+                        "Grimmbat_fly_full0000", "Grimmbat_fly_full0001", "Grimmbat_fly_full0002",
+                        "Grimmbat_fly_full0003", "Grimmbat_fly_full0004", "Grimmbat_fly_full0005"
+                    },
+                    ["GrimmSleep"] = new[]
+                    {
+                        "Grimmbat_sleep0000", "Grimmbat_sleep0001", "Grimmbat_sleep0002"
+                    },
+                    ["GrimmWake"] = new[]
+                    {
+                        "Grimmbat_sleep0002", "Grimmbat_sleep0001", "Grimmbat_sleep0000"

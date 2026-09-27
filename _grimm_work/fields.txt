@@ -1,0 +1,101 @@
+        private float _shieldOmegaFrom;  // 变速起点角速度
+        private float _shieldOmegaTo;    // 变速目标角速度
+        private float _shieldSpeedT;     // 变速进度 0~1
+        private float _shieldOrbitRadius = ShieldOrbitRadius; // 当前轨道半径（格，羁绊回血时动态增减）
+        private readonly HashSet<NelEnemy> _shieldContactEnemies = new HashSet<NelEnemy>();
+        private readonly HashSet<M2Attackable> _shieldContactPlayers = new HashSet<M2Attackable>();
+        private MeshDrawer _shieldMesh;
+        private M2RenderTicket _shieldTicket;
+        private Material _shieldMat;
+        // ---- 护符39 格林之子：跟随小骑士的小格林 ----
+        private const float GrimmSitSleepTime = 2f;    // 坐椅超过该秒数后入睡
+        private const float GrimmTeleportRange = 6f;   // 离骑士超过该距离触发传送
+        private const float GrimmScale = 0.22f;        // 渲染缩放（相对贴图原始像素）
+        private const float GrimmHoverOffX = 0.8f;     // 待机悬浮相对骑士 X 偏移（格）
+        private const float GrimmHoverOffY = -1.1f;    // 待机悬浮相对骑士 Y 偏移（格，向上为负）
+        private const float GrimmFollowLag = 0.9f;     // 正常跟随速度比例（略低于骑士）
+        private const float GrimmMaxSpeedRatio = 2f;   // 最大速度相对骑士速度的倍数（追赶用）
+        private const float GrimmRespawnDelay = 3f;    // 过图后重生等待（秒，同编织者之歌）
+        private const float GrimmSeekRange = 6f;       // 攻击范围半径（格，以自身为中心）
+        private const float GrimmAttackInterval = 2f;  // 攻击间隔（秒）
+        private const float GrimmFireballSpeed = 16f;  // 火球速度（格/秒）
+        private const float GrimmFireballRadius = 0.25f; // 火球半径（格）
+        private const float GrimmFireballLife = 5f;    // 火球寿命（秒）
+        private const int GrimmFireballDamage = 30;    // 火球伤害
+        private const float GrimmFireballSpread = 30f * Mathf.Deg2Rad; // 副火球偏转角（±30°）
+        private const float GrimmFireballScale = 0.3f; // 火球渲染缩放
+        private const float GrimmShootFireTime = 4f / 12f; // 第 0004 帧时刻（12fps）
+        private sealed class GrimmChild
+        {
+            public float X, Y;         // 格坐标
+            public int Phase;          // 0=出现 1=活跃 2=传送 3=睡眠 4=苏醒
+            public float AnimTime;     // 动画时间
+            public float AttackCd;     // 攻击冷却
+            public int SleepStage;     // 0=降落中 1=播睡眠动画 2=保持末帧
+            public float SleepX;       // 落点 X
+            public float SleepGroundY; // 落点 Y（脚底贴地）
+            public M2Attackable Target; // 攻击目标（敌人或已仇恨的远端玩家）
+            public bool TargetIsWeed;  // 目标是否为魔力草
+            public float WeedTargetX, WeedTargetY; // 魔力草目标位置
+            public AlicePVV200 AliceTarget; // 攻击目标（爱丽丝，不造成伤害）
+            public bool Fired;         // 本次攻击是否已发射火球
+        }
+        private sealed class GrimmFireball
+        {
+            public float X, Y;
+            public float DirX, DirY;
+            public float Life;
+            public AlicePVV200 Alice; // 爱丽丝目标（火球命中即消失，不造成伤害）
+            public readonly HashSet<object> Hits = new HashSet<object>(); // 敌人/魔力草去重
+        }
+        private GrimmChild _grimm;
+        private readonly List<GrimmFireball> _grimmFireballs = new List<GrimmFireball>();
+        private float _grimmRespawnDelay;
+        private float _grimmSitTimer;
+        private int _grimmSoundState;  // 0=静音 1=待机循环 2=攻击音
+        private MeshDrawer _grimmMesh;
+        private M2RenderTicket _grimmTicket;
+        private Material _grimmMat;
+        private MeshDrawer _grimmFireballMesh;
+        private M2RenderTicket _grimmFireballTicket;
+        private Material _grimmFireballMat;
+        private sealed class UterusHatchling
+        {
+            public float X;
+            public float Y;
+            public float Vx;
+            public float Vy;          // Y 向下为正
+            public int Phase;         // 0=出生 1=飞行 2=爆炸 3=睡眠（坐椅子）
+            public float AnimTime;
+            public M2Attackable Target;
+            public float HomeOx;      // 站立时相对骑士中心的停靠偏移（会随机变化）
+            public float HomeOy;
+            public float BuzzTimer;   // 随机微动计时
+            public int SleepStage;    // 睡眠阶段 0=下落中 1=已落地（落地后才播睡眠动画）
+            public float SleepX;      // 睡眠落点 X（长椅侧面，避免被长椅前板遮挡）
+            public float SleepGroundY; // 睡眠时落地的目标 Y（Y 向下为正）
+        }
+        private readonly List<UterusHatchling> _uterusHatchlings = new List<UterusHatchling>();
+        private float _uterusSpawnTimer = UterusSpawnInterval;
+        // 碰撞爆炸特效（幼体碰撞后消失，特效在碰撞点播放）
+        private sealed class UterusExplosion
+        {
+            public float X;
+            public float Y;
+            public float AnimTime;
+        }
+        private readonly List<UterusExplosion> _uterusExplosions = new List<UterusExplosion>();
+        private MeshDrawer _uterusMesh;
+        private M2RenderTicket _uterusTicket;
+        private Material _uterusMat;
+        private MeshDrawer _uterusExplosionDbgMesh;
+        private M2RenderTicket _uterusExplosionDbgTicket;
+        private Material _uterusExplosionDbgMat;
+        // ---- 蜕变挽歌（满血普攻剑气）----
+        private const float ElegyBladeSpeed = 30f;   // 剑气速度（格/秒）
+        /// <summary>剑气兜底射程（格）：正常靠"飞出房间"消失，这个只是防残留的上限。</summary>
+        private const float ElegyBladeMaxRange = 60f;
+        private const int ElegyBladeDamage = 15;     // 剑气伤害
+        private const float ElegyBladeHitboxW = 2.0f; // 剑气判定箱长度（格，沿飞行方向）
+        private const float ElegyBladeHitboxH = 1.4f; // 剑气判定箱高（格）
+        private const bool ElegyBladeHitboxDebug = false; // 绿色判定框调试（诊断用，已关闭）

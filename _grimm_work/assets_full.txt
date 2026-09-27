@@ -1,0 +1,119 @@
+        {
+            try
+            {
+                string dir = Path.Combine(Paths.PluginPath, "KnightInCradle", "assets", "hk",
+                    "sheets", "grimm");
+                if (!Directory.Exists(dir))
+                {
+                    return;
+                }
+                var wanted = new Dictionary<string, string[]>
+                {
+                    ["GrimmAppear"] = new[] { "Grimmbat_turn0000", "Grimmbat_turn0001" },
+                    ["GrimmIdle"] = new[]
+                    {
+                        "Grimmbat_idle0000", "Grimmbat_idle0001", "Grimmbat_idle0002",
+                        "Grimmbat_idle0003", "Grimmbat_idle0004", "Grimmbat_idle0005"
+                    },
+                    ["GrimmFly"] = new[]
+                    {
+                        "Grimmbat_fly_full0000", "Grimmbat_fly_full0001", "Grimmbat_fly_full0002",
+                        "Grimmbat_fly_full0003", "Grimmbat_fly_full0004", "Grimmbat_fly_full0005"
+                    },
+                    ["GrimmSleep"] = new[]
+                    {
+                        "Grimmbat_sleep0000", "Grimmbat_sleep0001", "Grimmbat_sleep0002"
+                    },
+                    ["GrimmWake"] = new[]
+                    {
+                        "Grimmbat_sleep0002", "Grimmbat_sleep0001", "Grimmbat_sleep0000"
+                    },
+                    ["GrimmTeleport"] = new[]
+                    {
+                        "Grimmbat_teleport0000", "Grimmbat_teleport0001", "Grimmbat_teleport0002",
+                        "Grimmbat_teleport0003", "Grimmbat_teleport0004", "Grimmbat_teleport0005",
+                        "Grimmbat_teleport0006", "Grimmbat_teleport0007"
+                    },
+                    ["GrimmShoot"] = new[]
+                    {
+                        "Grimmbat_shoot0000", "Grimmbat_shoot0001", "Grimmbat_shoot0002",
+                        "Grimmbat_shoot0003", "Grimmbat_shoot0004", "Grimmbat_shoot0005"
+                    },
+                    ["GrimmFireball"] = new[]
+                    {
+                        "grimm_fireball0000", "grimm_fireball0001", "grimm_fireball0002",
+                        "grimm_fireball0003", "grimm_fireball0004", "grimm_fireball0005",
+                        "grimm_fireball0006", "grimm_fireball0007"
+                    }
+                };
+                var fps = new Dictionary<string, float>
+                {
+                    ["GrimmAppear"] = 20f,
+                    ["GrimmIdle"] = 12f,
+                    ["GrimmFly"] = 12f,
+                    ["GrimmSleep"] = 12f,
+                    ["GrimmWake"] = 12f,
+                    ["GrimmTeleport"] = 20f,
+                    ["GrimmShoot"] = 12f,
+                    ["GrimmFireball"] = 16f
+                };
+                foreach (var kv in wanted)
+                {
+                    foreach (string n in kv.Value)
+                    {
+                        if (_textures.ContainsKey(n))
+                        {
+                            continue;
+                        }
+                        string png = Path.Combine(dir, n + ".png");
+                        if (!File.Exists(png))
+                        {
+                            continue;
+                        }
+                        var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                        if (!ImageConversion.LoadImage(tex, File.ReadAllBytes(png)))
+                        {
+                            continue;
+                        }
+                        tex.filterMode = FilterMode.Point;
+                        tex.wrapMode = TextureWrapMode.Clamp;
+                        _textures[n] = tex;
+                    }
+                }
+                foreach (var kv in wanted)
+                {
+                    var frames = new List<string>();
+                    foreach (string n in kv.Value)
+                    {
+                        if (_textures.ContainsKey(n))
+                        {
+                            frames.Add(n);
+                        }
+                    }
+                    if (frames.Count == 0)
+                    {
+                        continue;
+                    }
+                    _clips[kv.Key] = new ClipData
+                    {
+                        fps = fps[kv.Key],
+                        wrapMode = 0,
+                        loopStart = 0,
+                        frames = frames.ToArray()
+                    };
+                }
+                // 小格林音效（外部 wav）
+                DashAudio.LoadGrimmSounds();
+                // 无忧旋律音效（外部 wav）
+                DashAudio.LoadTuneSound();
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>
+        /// 凝聚三阶段剪辑：发动 focus_v020000~0002（0.27s）、
+        /// 回血 focus_v020003~0006（0.82s）、后续循环 focus_v020003~0010（1s）。
+        /// 结束帧：首次复用 Focus Get Once（0007~0011），后续只补 0011（FocusEndLast）。
+        /// </summary>

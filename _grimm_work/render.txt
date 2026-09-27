@@ -1,0 +1,161 @@
+
+        /// <summary>
+        /// 小格林渲染：锚定骑士中心，按状态选择动画帧（出现/待机/飞行/睡眠/苏醒/传送），
+        /// 以自身坐标相对骑士的像素偏移绘制，骑士身前层 PR1。
+        /// </summary>
+        private bool KnightPrepareGrimmMesh(Camera Cam, M2RenderTicket Tk, bool need_redraw, int draw_id,
+            out MeshDrawer MdOut, ref bool color_one_overwrite)
+        {
+            MdOut = null;
+            if (_mp == null || _grimmMesh == null)
+            {
+                return false;
+            }
+            if (draw_id != 0)
+            {
+                return false;
+            }
+            _grimmMesh.clearSimple();
+            if (!CharmEffects.IsEquipped(CharmEffects.GrimmId) || _grimm == null)
+            {
+                MdOut = _grimmMesh;
+                return true;
+            }
+            GrimmChild g = _grimm;
+            string sprite = null;
+            if (g.Phase == 0)
+            {
+                sprite = GrimmFrame("GrimmAppear", g.AnimTime, false);
+            }
+            else if (g.Phase == 1)
+            {
+                bool moving = Mathf.Abs(Vx) > 0.05f || !Grounded;
+                sprite = GrimmFrame(moving ? "GrimmFly" : "GrimmIdle", g.AnimTime, true);
+            }
+            else if (g.Phase == 2)
+            {
+                sprite = GrimmFrame("GrimmTeleport", g.AnimTime, false);
+            }
+            else if (g.Phase == 3)
+            {
+                if (g.SleepStage == 0)
+                {
+                    sprite = GrimmFrame("GrimmIdle", g.AnimTime, true); // 降落中仍待机
+                }
+                else if (g.SleepStage == 1)
+                {
+                    sprite = GrimmFrame("GrimmSleep", g.AnimTime, false);
+                }
+                else
+                {
+                    // 保持睡眠末帧（sleep0002）：直接取剪辑最后一帧，
+                    // 不能用超大时间走 GrimmFrame（float→int 溢出会取到第 0 帧）
+                    if (_clips.TryGetValue("GrimmSleep", out ClipData sc) && sc.frames.Length > 0)
+                    {
+                        sprite = sc.frames[sc.frames.Length - 1];
+                    }
+                }
+            }
+            else if (g.Phase == 4)
+            {
+                sprite = GrimmFrame("GrimmWake", g.AnimTime, false);
+            }
+            else if (g.Phase == 5)
+            {
+                sprite = GrimmFrame("GrimmShoot", g.AnimTime, false);
+            }
+            if (sprite == null || !_textures.TryGetValue(sprite, out Texture2D tex))
+            {
+                MdOut = _grimmMesh;
+                return true;
+            }
+            float mx = _mp.pixel2ux(X * _mp.CLEN);
+            float my = _mp.pixel2uy(Y * _mp.CLEN);
+            Tk.Matrix = _mp.gameObject.transform.localToWorldMatrix *
+                        Matrix4x4.Translate(new Vector3(mx, my, 0f));
+            float dxm = (g.X - X) * _mp.CLEN;
+            float dym = -(g.Y - Y) * _mp.CLEN;
+            float w = tex.width * GrimmScale;
+            float h = tex.height * GrimmScale;
+            _grimmMesh.Col = MTRX.ColWhite;
+            _grimmMesh.initForImgAndTexture(tex);
+            _grimmMesh.uv_top = 0f;
+            _grimmMesh.uv_height = 1f;
+            // 面朝约定：_faceDir<0=面朝右（翻转），_faceDir>0=面朝左（保持原图，素材默认朝左）
+            if (_faceDir < 0f)
+            {
+                _grimmMesh.uv_left = 1f;
+                _grimmMesh.uv_width = -1f;
+            }
+            else
+            {
+                _grimmMesh.uv_left = 0f;
+                _grimmMesh.uv_width = 1f;
+            }
+            _grimmMesh.Rect(dxm, dym, w, h, false); // Rect 的 (x,y) 是中心
+            MdOut = _grimmMesh;
+            return true;
+        }
+
+        /// <summary>小格林火球渲染：独立网格（循环播 grimm_fireball0000~0007，16fps）。</summary>
+        private bool KnightPrepareGrimmFireballMesh(Camera Cam, M2RenderTicket Tk, bool need_redraw, int draw_id,
+            out MeshDrawer MdOut, ref bool color_one_overwrite)
+        {
+            MdOut = null;
+            if (_mp == null || _grimmFireballMesh == null)
+            {
+                return false;
+            }
+            if (draw_id != 0)
+            {
+                return false;
+            }
+            _grimmFireballMesh.clearSimple();
+            if (!CharmEffects.IsEquipped(CharmEffects.GrimmId) || _grimmFireballs.Count == 0 ||
+                !_clips.TryGetValue("GrimmFireball", out ClipData fbClip) || fbClip.frames.Length == 0)
+            {
+                MdOut = _grimmFireballMesh;
+                return true;
+            }
+            float mx = _mp.pixel2ux(X * _mp.CLEN);
+            float my = _mp.pixel2uy(Y * _mp.CLEN);
+            Tk.Matrix = _mp.gameObject.transform.localToWorldMatrix *
+                        Matrix4x4.Translate(new Vector3(mx, my, 0f));
+            _grimmFireballMesh.Col = MTRX.ColWhite;
+            for (int fi = 0; fi < _grimmFireballs.Count; fi++)
+            {
+                GrimmFireball f = _grimmFireballs[fi];
+                // 用已存活时间正向取帧（Life 是倒计时，直接用会倒放）
+                int fidx = ((int)((GrimmFireballLife - f.Life) * fbClip.fps)) % fbClip.frames.Length;
+                if (fidx < 0) fidx = 0;
+                if (!_textures.TryGetValue(fbClip.frames[fidx], out Texture2D ftex))
+                {
+                    continue;
+                }
+                _grimmFireballMesh.initForImgAndTexture(ftex);
+                _grimmFireballMesh.uv_top = 0f;
+                _grimmFireballMesh.uv_height = 1f;
+                _grimmFireballMesh.uv_left = 0f;
+                _grimmFireballMesh.uv_width = 1f;
+                float fdx = (f.X - X) * _mp.CLEN;
+                float fdy = -(f.Y - Y) * _mp.CLEN;
+                float fbw = ftex.width * GrimmFireballScale;
+                float fbh = ftex.height * GrimmFireballScale;
+                _grimmFireballMesh.Rect(fdx, fdy, fbw, fbh, false);
+            }
+            MdOut = _grimmFireballMesh;
+            return true;
+        }
+
+        /// <summary>
+        /// 蜕变挽歌调试：绿色线框标出每道剑气的判定箱（矩阵锚定小骑士原点）。
+        /// </summary>
+        private bool KnightPrepareElegyBladeDebugMesh(Camera Cam, M2RenderTicket Tk, bool need_redraw, int draw_id,
+            out MeshDrawer MdOut, ref bool color_one_overwrite)
+        {
+            MdOut = null;
+            if (_mp == null || _elegyBladeDbgMesh == null)
+            {
+                return false;
+            }
+            if (draw_id != 0)

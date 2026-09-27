@@ -1,0 +1,261 @@
+            int idx = loop
+                ? (int)(t * clip.fps) % clip.frames.Length
+                : Mathf.Clamp((int)(t * clip.fps), 0, clip.frames.Length - 1);
+            return clip.frames[idx];
+        }
+
+        /// <summary>
+        /// 小格林索敌：6 格半径内优先级为 敌人 &gt; 爱丽丝 &gt; 魔力草。
+        /// 攻击爱丽丝不造成伤害。返回是否找到目标。
+        /// </summary>
+        private bool FindGrimmTarget(GrimmChild g)
+        {
+            M2Attackable aggro = FindNearestPvpAggroTarget(g.X, g.Y, GrimmSeekRange);
+            if (aggro != null)
+            {
+                g.Target = aggro;
+                g.TargetIsWeed = false;
+                return true;
+            }
+            NelEnemy enemy = FindNearestGrimmEnemy(g.X, g.Y);
+            if (enemy != null)
+            {
+                g.Target = enemy;
+                g.TargetIsWeed = false;
+                g.AliceTarget = null;
+                return true;
+            }
+            // 爱丽丝（任意房间）：佩戴格林之子时小格林攻击爱丽丝，但不造成伤害
+            if (TryFindGrimmAlice(g.X, g.Y, out AlicePVV200 alice))
+            {
+                g.Target = null;
+                g.TargetIsWeed = false;
+                g.AliceTarget = alice;
+                return true;
+            }
+            if (FindNearestGrimmWeed(g.X, g.Y, out float wx, out float wy))
+            {
+                g.Target = null;
+                g.TargetIsWeed = true;
+                g.AliceTarget = null;
+                g.WeedTargetX = wx;
+                g.WeedTargetY = wy;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 查找当前房间里的爱丽丝（AlicePVV200）作为小格林攻击目标：
+        /// 6 格半径内最近者；攻击爱丽丝不造成伤害（火球命中即消失）。
+        /// </summary>
+        private bool TryFindGrimmAlice(float sx, float sy, out AlicePVV200 alice)
+        {
+            alice = null;
+            if (_mp == null)
+            {
+                return false;
+            }
+            try
+            {
+                int count = _mp.count_movers;
+                for (int i = 0; i < count; i++)
+                {
+                    M2Mover mv = _mp.getMv(i);
+                    if (mv is AlicePVV200 a && !a.destructed)
+                    {
+                        float dx = a.x - sx;
+                        float dy = a.y - sy;
+                        if (dx * dx + dy * dy <= GrimmSeekRange * GrimmSeekRange)
+                        {
+                            alice = a;
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+            return false;
+        }
+
+        /// <summary>6 格半径内最近敌人（复刻小编织者索敌，范围改为 6）。</summary>
+        private NelEnemy FindNearestGrimmEnemy(float sx, float sy)
+        {
+            if (_mp == null || _mp.gameObject == null)
+            {
+                return null;
+            }
+            try
+            {
+                int mask = GetEnemyOverlapMask();
+                if (mask == 0)
+                {
+                    return null;
+                }
+                float mx = _mp.pixel2ux(sx * _mp.CLEN);
+                float my = _mp.pixel2uy(sy * _mp.CLEN);
+                Vector2 center = _mp.gameObject.transform.TransformPoint(new Vector2(mx, my));
+                Collider2D[] hits = Physics2D.OverlapCircleAll(center, GrimmSeekRange, mask);
+                if (hits == null)
+                {
+                    return null;
+                }
+                NelEnemy best = null;
+                float bestD = float.MaxValue;
+                for (int i = 0; i < hits.Length; i++)
+                {
+                    Collider2D c = hits[i];
+                    if (c == null)
+                    {
+                        continue;
+                    }
+                    NelEnemy enemy = c.GetComponentInParent<NelEnemy>();
+                    enemy = ResolveDamageTarget(enemy);
+                    if (enemy == null)
+                    {
+                        continue;
+                    }
+                    float dx = enemy.x - sx;
+                    float dy = enemy.y - sy;
+                    float d = dx * dx + dy * dy;
+                    if (d < bestD)
+                    {
+                        bestD = d;
+                        best = enemy;
+                    }
+                }
+                return best;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>6 格半径内最近的魔力草，返回其格坐标。</summary>
+        private bool FindNearestGrimmWeed(float sx, float sy, out float wx, out float wy)
+        {
+            wx = 0f;
+            wy = 0f;
+            if (_mp == null || _mp.gameObject == null)
+            {
+                return false;
+            }
+            try
+            {
+                int mask = GetAreaObjectMask();
+                if (mask == 0)
+                {
+                    return false;
+                }
+                float mx = _mp.pixel2ux(sx * _mp.CLEN);
+                float my = _mp.pixel2uy(sy * _mp.CLEN);
+                Vector2 center = _mp.gameObject.transform.TransformPoint(new Vector2(mx, my));
+                Collider2D[] hits = Physics2D.OverlapCircleAll(center, GrimmSeekRange, mask);
+                if (hits == null)
+                {
+                    return false;
+                }
+                bool found = false;
+                float bestD = float.MaxValue;
+                for (int i = 0; i < hits.Length; i++)
+                {
+                    Collider2D c = hits[i];
+                    if (c == null)
+                    {
+                        continue;
+                    }
+                    M2ManaWeed weed = c.GetComponentInParent<M2ManaWeed>();
+                    if (weed == null || !IsManaWeedReady(weed))
+                    {
+                        // 跳过已被破坏/正在重生（未完全长成）的魔力草
+                        continue;
+                    }
+                    float wx2 = weed.mapcx;
+                    float wy2 = weed.mapcy;
+                    float dx = wx2 - sx;
+                    float dy = wy2 - sy;
+                    float d = dx * dx + dy * dy;
+                    if (d < bestD)
+                    {
+                        bestD = d;
+                        wx = wx2;
+                        wy = wy2;
+                        found = true;
+                    }
+                }
+                return found;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>攻击 0004 帧：向目标发射三枚直线火球（正中 + 顺/逆时针各 30°）。</summary>
+        private void GrimmSpawnFireballs(GrimmChild g)
+        {
+            float tx, ty;
+            if (g.AliceTarget != null && !g.AliceTarget.destructed)
+            {
+                // 爱丽丝：瞄准当前位置（攻击不造成伤害）
+                tx = g.AliceTarget.x;
+                ty = g.AliceTarget.y;
+            }
+            else if (!g.TargetIsWeed)
+            {
+                if (g.Target != null && g.Target.is_alive)
+                {
+                    tx = g.Target.x;
+                    ty = g.Target.y;
+                }
+                else
+                {
+                    // 目标已失效：朝自身面前方向射出（保底）
+                    tx = g.X + (_faceDir > 0f ? -1f : 1f);
+                    ty = g.Y - 1f;
+                }
+            }
+            else
+            {
+                tx = g.WeedTargetX;
+                ty = g.WeedTargetY;
+                if (tx == 0f && ty == 0f)
+                {
+                    tx = g.X;
+                    ty = g.Y - 1.5f;
+                }
+            }
+            float baseAng = Mathf.Atan2(ty - g.Y, tx - g.X); // 游戏 Y 向下，+角=顺时针
+            float[] offs = { 0f, GrimmFireballSpread, -GrimmFireballSpread };
+            for (int i = 0; i < offs.Length; i++)
+            {
+                float a = baseAng + offs[i];
+                _grimmFireballs.Add(new GrimmFireball
+                {
+                    X = g.X,
+                    Y = g.Y,
+                    DirX = Mathf.Cos(a),
+                    DirY = Mathf.Sin(a),
+                    Life = GrimmFireballLife,
+                    Alice = g.AliceTarget
+                });
+            }
+        }
+
+        /// <summary>火球推进：直线飞行、穿敌、破魔力草、5 秒后销毁。</summary>
+        private void UpdateGrimmFireballs(float sdt)
+        {
+            if (_grimmFireballs.Count == 0)
+            {
+                return;
+            }
+            if (_mp == null || _mp.gameObject == null)
+            {
+                return;
+            }
+            int enemyMask = GetEnemyOverlapMask();
+            int areaMask = GetAreaObjectMask();
+            for (int i = _grimmFireballs.Count - 1; i >= 0; i--)

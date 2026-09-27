@@ -1,0 +1,261 @@
+                    return;
+                }
+                for (int i = 0; i < len && i < items.Length; i++)
+                {
+                    MagicItem mg = items[i];
+                    if (mg == null || mg.Caster == null || !(mg.Caster is NelEnemy))
+                    {
+                        continue;
+                    }
+                    float dx = mg.sx - sx;
+                    float dy = mg.sy - sy;
+                    if (dx * dx + dy * dy <= ShieldContactRadius * ShieldContactRadius)
+                    {
+                        mg.kill(0f); // 命中即销毁（阻挡）
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        // ---------- 护符39 格林之子 ----------
+
+        /// <summary>
+        /// 每帧推进小格林：
+        /// 出现（turn）→ 待机（idle，站立/坐椅）/ 跟随（fly_full，走路，速度略慢）；
+        /// 坐椅超 3 秒入睡（sleep，落地保持末帧），起身反向播睡眠再缓缓升空；
+        /// 离骑士超 3.5 格原地播 teleport 后删除，在骑士身边重生（turn）。
+        /// </summary>
+        private void UpdateGrimm(float sdt)
+        {
+            if (!CharmEffects.IsEquipped(CharmEffects.GrimmId))
+            {
+                _grimm = null;
+                _grimmFireballs.Clear();
+                _grimmRespawnDelay = 0f;
+                _grimmSitTimer = 0f;
+                if (_grimmSoundState == 1)
+                {
+                    DashAudio.StopGrimmIdleLoop();
+                }
+                _grimmSoundState = 0;
+                return;
+            }
+            // 火球推进（不受小格林状态/过图倒计时影响，只要护符佩戴中）
+            UpdateGrimmFireballs(sdt);
+            // 过图后重生倒计时（同编织者之歌：等骑士在新地图稳定再生成）
+            if (_grimmRespawnDelay > 0f)
+            {
+                _grimmRespawnDelay -= sdt;
+                if (_grimmRespawnDelay > 0f)
+                {
+                    if (_grimmSoundState == 1)
+                    {
+                        DashAudio.StopGrimmIdleLoop();
+                    }
+                    _grimmSoundState = 0;
+                    return;
+                }
+            }
+            if (_grimm == null)
+            {
+                _grimm = new GrimmChild
+                {
+                    X = GrimmHoverTargetX(),
+                    Y = Y + GrimmHoverOffY,
+                    Phase = 0,
+                    AnimTime = 0f,
+                    AttackCd = 0f,
+                    Target = null
+                };
+            }
+            GrimmChild g = _grimm;
+            g.AnimTime += sdt;
+            // 非攻击状态：循环播放待机音
+            if (g.Phase != 5 && _grimmSoundState != 1)
+            {
+                DashAudio.PlayGrimmIdleLoop();
+                _grimmSoundState = 1;
+            }
+
+            bool sitting = IsSitting;
+            if (sitting)
+            {
+                _grimmSitTimer += sdt;
+                if (_grimmSitTimer >= GrimmSitSleepTime && g.Phase == 1)
+                {
+                    // 坐椅超时：入睡（原地垂直落下，不横向移动）
+                    g.Phase = 3;
+                    g.AnimTime = 0f;
+                    g.SleepStage = 0;
+                    g.SleepX = g.X;
+                    g.SleepGroundY = GetGrimmSleepGroundY();
+                }
+            }
+            else
+            {
+                _grimmSitTimer = 0f;
+                if (g.Phase == 3)
+                {
+                    // 起身：反向睡眠动画（播到 sleep0000 即回活跃）
+                    g.Phase = 4;
+                    g.AnimTime = 0f;
+                }
+            }
+
+            if (g.Phase == 3) // 睡眠
+            {
+                if (g.SleepStage == 0)
+                {
+                    Vector2 toSleep = new Vector2(g.SleepX - g.X, g.SleepGroundY - g.Y);
+                    float dist = toSleep.magnitude;
+                    if (dist > 0.02f)
+                    {
+                        float spd = Mathf.Min(4f, dist * 4f);
+                        toSleep /= dist;
+                        g.X += toSleep.x * spd * sdt;
+                        g.Y += toSleep.y * spd * sdt;
+                    }
+                    else
+                    {
+                        g.X = g.SleepX;
+                        g.Y = g.SleepGroundY;
+                        g.SleepStage = 1;
+                        g.AnimTime = 0f;
+                    }
+                }
+                else if (g.SleepStage == 1 && g.AnimTime >= GetClipDuration("GrimmSleep"))
+                {
+                    g.SleepStage = 2; // 保持睡眠末帧
+                }
+                return;
+            }
+            if (g.Phase == 4) // 苏醒：反向睡眠（sleep0002→0000）播完后直接回活跃，由 Phase1 自动升回追随点
+            {
+                if (g.AnimTime >= GetClipDuration("GrimmWake"))
+                {
+                    g.Phase = 1;
+                    g.AnimTime = 0f;
+                }
+                return;
+            }
+            if (g.Phase == 2) // 传送：原地播完 teleport，删除并在骑士身边重生
+            {
+                if (g.AnimTime >= GetClipDuration("GrimmTeleport"))
+                {
+                    _grimm = null; // 下一帧以 turn 出生
+                }
+                return;
+            }
+            if (g.Phase == 0) // 出现：播完 turn 进入活跃
+            {
+                if (g.AnimTime >= GetClipDuration("GrimmAppear"))
+                {
+                    g.Phase = 1;
+                    g.AnimTime = 0f;
+                }
+                return;
+            }
+            if (g.Phase == 5) // 攻击：播 shoot，0004 帧瞬间发射三枚火球
+            {
+                if (!g.Fired && g.AnimTime >= GrimmShootFireTime)
+                {
+                    g.Fired = true;
+                    GrimmSpawnFireballs(g);
+                }
+                if (g.AnimTime >= GetClipDuration("GrimmShoot"))
+                {
+                    g.Phase = 1;
+                    g.AnimTime = 0f;
+                    g.AttackCd = GrimmAttackInterval;
+                    g.Target = null;
+                    g.AliceTarget = null;
+                    DashAudio.PlayGrimmIdleLoop(); // 攻击结束恢复待机循环
+                    _grimmSoundState = 1;
+                }
+                return;
+            }
+
+            // Phase 1 活跃：待机悬浮 / 跟随
+            g.AttackCd -= sdt;
+            float hoverX = GrimmHoverTargetX();
+            float hoverY = Y + GrimmHoverOffY;
+            bool knightMoving = Mathf.Abs(Vx) > 0.05f || !Grounded;
+            Vector2 toTarget = new Vector2(hoverX - g.X, hoverY - g.Y);
+            float tDist = toTarget.magnitude;
+            if (tDist > 0.05f)
+            {
+                toTarget /= tDist;
+                float spd;
+                if (knightMoving)
+                {
+                    // 跟随：正常略低于骑士；远时加速追赶，但最大不超过骑士速度的 2 倍
+                    // Vx 为“格/帧@60”单位，×60 换算为“格/秒”再参与真实秒积分
+                    float knightSpd = Mathf.Abs(Vx) * 60f;
+                    float followSpd = knightSpd * GrimmFollowLag;
+                    float maxSpd = knightSpd * GrimmMaxSpeedRatio;
+                    spd = Mathf.Clamp(tDist * 2.5f, followSpd, maxSpd);
+                }
+                else
+                {
+                    spd = Mathf.Min(2.5f, tDist * 2.5f);
+                }
+                g.X += toTarget.x * spd * sdt;
+                g.Y += toTarget.y * spd * sdt;
+            }
+            // 攻击触发：冷却结束且范围内有目标（敌人优先，其次魔力草）
+            if (g.AttackCd <= 0f && FindGrimmTarget(g))
+            {
+                g.Phase = 5;
+                g.AnimTime = 0f;
+                g.Fired = false;
+                if (_grimmSoundState == 1)
+                {
+                    DashAudio.StopGrimmIdleLoop();
+                }
+                DashAudio.PlayGrimmAttackYelp(); // 攻击瞬间播放 yelp
+                _grimmSoundState = 2;
+                return;
+            }
+            // 距离检测：离骑士超 3.5 格 → 原地传送动画后重生
+            float gdx = g.X - X;
+            float gdy = g.Y - Y;
+            if (gdx * gdx + gdy * gdy > GrimmTeleportRange * GrimmTeleportRange)
+            {
+                g.Phase = 2;
+                g.AnimTime = 0f;
+            }
+        }
+
+        /// <summary>
+        /// 小格林追随点 X：位于小骑士后上方（面朝方向的反方向）。
+        /// 面朝约定：_faceDir&gt;0=面朝左（后方在右），_faceDir&lt;0=面朝右（后方在左）。
+        /// </summary>
+        private float GrimmHoverTargetX()
+        {
+            return X + (_faceDir > 0f ? GrimmHoverOffX : -GrimmHoverOffX);
+        }
+
+        /// <summary>坐椅时小格林落地的目标 Y（睡眠贴图底边贴地）。</summary>
+        private float GetGrimmSleepGroundY()
+        {
+            float groundY = _sitGroundY + SizeY;
+            if (_mp != null && _clips.TryGetValue("GrimmSleep", out ClipData sc) &&
+                sc.frames.Length > 0 &&
+                _textures.TryGetValue(sc.frames[sc.frames.Length - 1], out Texture2D tex))
+            {
+                groundY -= tex.height * GrimmScale / (2f * _mp.CLEN);
+            }
+            return groundY;
+        }
+
+        /// <summary>按剪辑取当前帧（loop=循环，否则播完停末帧）。</summary>
+        private string GrimmFrame(string clipName, float t, bool loop)
+        {
+            if (!_clips.TryGetValue(clipName, out ClipData clip) || clip.frames.Length == 0)
+            {
+                return null;
+            }
+            int idx = loop
