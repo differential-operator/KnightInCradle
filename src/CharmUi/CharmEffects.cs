@@ -1126,6 +1126,74 @@ namespace KnightInCradle.CharmUi
         /// <summary>记录上一次看到的渲染容器；换容器说明旧票据全部作废。</summary>
         private static M2MovRenderContainer _noelTicketRendererSeen;
 
+        private static FieldInfo _mmrcAADobField;
+        private static bool _mmrcAADobFieldResolved;
+
+        /// <summary>
+        /// 票据是否还在渲染容器的绘制列表（私有 `AADob[4]`）里。
+        /// AIC 有"清空列表但不逐个 release"的路径（`M2MovRenderContainer.initS`），
+        /// 这时 `draw_gl_only` 还是 true，只有查列表才能发现票据已经不会画了。
+        /// 反射失败时按"在"处理（不干扰正常渲染）。
+        /// </summary>
+        public static bool IsTicketRegistered(M2MovRenderContainer rend, M2RenderTicket tk)
+        {
+            try
+            {
+                if (rend == null || tk == null)
+                {
+                    return false;
+                }
+                if (!_mmrcAADobFieldResolved)
+                {
+                    _mmrcAADobFieldResolved = true;
+                    _mmrcAADobField = typeof(M2MovRenderContainer).GetField("AADob",
+                        BindingFlags.Instance | BindingFlags.NonPublic);
+                }
+                if (_mmrcAADobField == null)
+                {
+                    return true;
+                }
+                object[] lists = _mmrcAADobField.GetValue(rend) as object[];
+                if (lists == null)
+                {
+                    return true;
+                }
+                for (int i = 0; i < lists.Length; i++)
+                {
+                    System.Collections.IList list = lists[i] as System.Collections.IList;
+                    if (list != null && list.Contains(tk))
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+        }
+
+        /// <summary>是否有"还拿着、但已经不在容器绘制列表里"的诺艾尔护符票据。</summary>
+        private static bool AnyNoelTicketDropped(M2MovRenderContainer rend)
+        {
+            M2RenderTicket[] at =
+            {
+                _noelElegyTicket, _noelShellTicket, _noelShelterCircleTicket, _noelShelterFxTicket,
+                _noelShelterSphereTicket, _noelSpikeTicket, _noelFlukeTicket, _noelShieldTicket,
+                _nmCircleTicket, _noelWeaverTicket, _noelLongNailArcTicket, _heavyFocusAuraTicket,
+                _noelChargeAuraTicket, _shadowDashBurstTicket, _noelShadowTicket, _noelFuryGlowTicket
+            };
+            for (int i = 0; i < at.Length; i++)
+            {
+                if (at[i] != null && !IsTicketRegistered(rend, at[i]))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         /// <summary>
         /// 每帧一次（诺艾尔模式）：渲染容器换代（同一张地图重建、或换成子地图容器）时
         /// 作废所有诺艾尔护符票据，交给各自的 Ensure 在下一帧重建。返回是否发生了作废。
@@ -1135,18 +1203,28 @@ namespace KnightInCradle.CharmUi
             try
             {
                 M2MovRenderContainer cur = mp != null ? mp.MovRenderer : null;
-                if (cur == null || ReferenceEquals(cur, _noelTicketRendererSeen))
+                if (cur == null)
                 {
                     return false;
                 }
-                bool first = _noelTicketRendererSeen == null;
-                _noelTicketRendererSeen = cur;
-                if (first)
+                if (!ReferenceEquals(cur, _noelTicketRendererSeen))
                 {
-                    return false;
+                    bool first = _noelTicketRendererSeen == null;
+                    _noelTicketRendererSeen = cur;
+                    if (first)
+                    {
+                        return false;
+                    }
+                    InvalidateNoelCharmTickets();
+                    return true;
                 }
-                InvalidateNoelCharmTickets();
-                return true;
+                // 低频抽查：AIC 有"清空绘制列表但不 release"的路径，只有查列表才能发现
+                if (Time.frameCount % 30 == 0 && AnyNoelTicketDropped(cur))
+                {
+                    InvalidateNoelCharmTickets();
+                    return true;
+                }
+                return false;
             }
             catch (Exception)
             {

@@ -77,6 +77,53 @@ namespace KnightInCradle.Grimm
         /// <summary>票据绑定时所属的渲染容器：战斗/子地图重建容器后需要重绑。</summary>
         private M2MovRenderContainer _rendererSeen;
 
+        private static System.Reflection.FieldInfo _aadobField;
+        private static bool _aadobFieldResolved;
+
+        /// <summary>
+        /// 票据是否还在渲染容器的绘制列表（私有 `AADob[4]`）里。
+        /// AIC 有"清空列表但不逐个 release"的路径（`M2MovRenderContainer.initS`），
+        /// 只有查列表才能发现票据已经不会画了；反射失败时按"在"处理。
+        /// </summary>
+        private static bool IsTicketRegistered(M2MovRenderContainer rend, M2RenderTicket tk)
+        {
+            try
+            {
+                if (rend == null || tk == null)
+                {
+                    return false;
+                }
+                if (!_aadobFieldResolved)
+                {
+                    _aadobFieldResolved = true;
+                    _aadobField = typeof(M2MovRenderContainer).GetField("AADob",
+                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                }
+                if (_aadobField == null)
+                {
+                    return true;
+                }
+                object[] lists = _aadobField.GetValue(rend) as object[];
+                if (lists == null)
+                {
+                    return true;
+                }
+                for (int i = 0; i < lists.Length; i++)
+                {
+                    System.Collections.IList list = lists[i] as System.Collections.IList;
+                    if (list != null && list.Contains(tk))
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+        }
+
         public GrimmController(IGrimmHost host)
         {
             _host = host;
@@ -429,6 +476,11 @@ namespace KnightInCradle.Grimm
             // 票据还活着（没被渲染容器回收）+ 地图/容器都没换 → 不用重建
             bool alive = _ticket != null && _fbTicket != null && _mesh != null && _fbMesh != null &&
                          _mesh.draw_gl_only && _fbMesh.draw_gl_only;
+            if (alive && Time.frameCount % 30 == 0 &&
+                (!IsTicketRegistered(cur, _ticket) || !IsTicketRegistered(cur, _fbTicket)))
+            {
+                alive = false; // 容器静默清了绘制列表（initS）：强制重绑
+            }
             if (alive && _map == mp && _mapRevision == _host.MapRevision &&
                 ReferenceEquals(cur, _rendererSeen))
             {
