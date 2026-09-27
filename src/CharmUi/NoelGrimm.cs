@@ -22,7 +22,7 @@ namespace KnightInCradle.CharmUi
         public const float GrimmSitSleepTime = 2f;    // 坐椅超过该秒数后入睡
         public const float GrimmTeleportRange = 6f;   // 离诺艾尔超过该距离触发传送
         public const float GrimmScale = 0.22f;        // 渲染缩放（相对贴图原始像素）
-        public const float GrimmHoverOffX = 0.8f;     // 待机悬浮相对诺艾尔 X 偏移（格）
+        public const float GrimmHoverOffX = 1.2f;     // 待机悬浮相对诺艾尔 X 偏移（格，需求 2026-09-27：后方 1.2 格）
         public const float GrimmHoverOffY = -1.1f;    // 待机悬浮相对诺艾尔 Y 偏移（格，向上为负）
         public const float GrimmFollowLag = 0.9f;     // 正常跟随速度比例（略低于诺艾尔）
         public const float GrimmMaxSpeedRatio = 2f;   // 最大速度相对诺艾尔速度的倍数（追赶用）
