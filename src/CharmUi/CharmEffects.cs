@@ -1232,6 +1232,31 @@ namespace KnightInCradle.CharmUi
             }
         }
 
+        /// <summary>
+        /// 切换成小骑士时调用：把诺艾尔那一整套护符的渲染票据全部释放。
+        /// 这些票据是"每帧维护"的（Ensure 重建 / 卸下·离场时 Release），骑士模式下诺艾尔的
+        /// 每帧 tick 不再执行，若不在这里统一释放，法阵（防御者纹章）/ 梦之盾 / 小编织者 / 剑山
+        /// 等会留在画面上继续渲染。
+        /// </summary>
+        public static void ReleaseAllNoelCharmRenderTickets()
+        {
+            try { ReleaseNoelElegyTicket(); } catch (Exception) { }
+            try { ReleaseNoelShellTicket(); } catch (Exception) { }
+            try { ReleaseNoelShelterTickets(); } catch (Exception) { }
+            try { ReleaseNoelSpikeTicket(); } catch (Exception) { }
+            try { ReleaseNoelFlukeTicket(); } catch (Exception) { }
+            try { ReleaseNoelShieldTicket(); } catch (Exception) { }
+            try { ReleaseNailMasterCircleTicket(); } catch (Exception) { }
+            try { ReleaseNoelWeaverTicket(); } catch (Exception) { }
+            try { ReleaseLongNailArcTicket(); } catch (Exception) { }
+            try { ReleaseHeavyFocusAuraTicket(); } catch (Exception) { }
+            try { ReleaseNoelChargeAuraTicket(); } catch (Exception) { }
+            try { ReleaseNoelShadowDashBurstTicket(); } catch (Exception) { }
+            try { ReleaseNoelShadowTicket(); } catch (Exception) { }
+            try { ReleaseNoelFuryGlowTicket(); } catch (Exception) { }
+            _noelTicketRendererSeen = null;
+        }
+
         /// <summary>把所有诺艾尔护符票据标记为"待重建"（把各自记录的地图清空即可，Ensure 里会重新建）。</summary>
         private static void InvalidateNoelCharmTickets()
         {

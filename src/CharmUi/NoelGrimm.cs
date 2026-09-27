@@ -35,6 +35,23 @@ namespace KnightInCradle.CharmUi
         }
 
         /// <summary>诺艾尔侧宿主：把角色信息喂给共享实现。</summary>
+        /// <summary>切换成小骑士时调用：立刻收尾（否则小格林会留在画面上继续渲染）。</summary>
+        public static void Stop()
+        {
+            try
+            {
+                if (_ctl != null)
+                {
+                    _ctl.Stop();
+                }
+                Impl.Noel = null;
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>诺艾尔侧宿主：把角色信息喂给共享实现。</summary>
         private sealed class Host : IGrimmHost
         {
             public PRNoel Noel;

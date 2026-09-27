@@ -145,6 +145,24 @@ namespace KnightInCradle.Grimm
             }
         }
 
+        /// <summary>宿主离场（切人/死亡等）时调用：立刻释放票据并清掉小格林与火球，画面上不残留。</summary>
+        public void Stop()
+        {
+            try
+            {
+                StopIdleLoop();
+                _child = null;
+                _fireballs.Clear();
+                _respawnDelay = 0f;
+                _sitTimer = 0f;
+                Release();
+                _rendererSeen = null;
+            }
+            catch (Exception)
+            {
+            }
+        }
+
         /// <summary>宿主还没准备好（角色死亡/过图中）时返回 false，共享实现会收尾。</summary>
         private bool Ready => _host != null && _host.Active && _host.GrimmEquipped;
 

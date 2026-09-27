@@ -21,9 +21,8 @@ namespace KnightInCradle
         /// 配合后面的 `dll=路径 (文件时间)` 可以立刻确认游戏实际加载的是哪一份 DLL。
         /// </summary>
         // 2026-09-27.42：护符槽配方标记为"已知"（CInfo.obtain_flag）→ 才会出现在炼金列表里
-        // 2026-09-27.52：自定义保卫战（召唤创作 TD）里护符渲染/召唤物集体消失：
-        // 增加"票据是否还在容器绘制列表里"的低频抽查 + 容器换代自愈
-        internal const string SelfBuildTag = "2026-09-27.52";
+        // 2026-09-27.53：切回小骑士时统一释放诺艾尔护符的渲染票据（法阵/梦之盾/小编织者/格林之子残留）
+        internal const string SelfBuildTag = "2026-09-27.53";
 
         private static bool _harmonyApplied;
         private static bool _seriousInitApplied; // 启动时是否已应用过一次布局（防止残留居中布局）
@@ -1071,6 +1070,10 @@ namespace KnightInCradle
             HideNoel(pr, true);
             HideNoelRenderTicket(pr, true);
             KillShadow(pr);
+            // 切小骑士：诺艾尔那一整套"每帧维护"的护符渲染票据（法阵/梦之盾/小编织者/剑山/光圈等）
+            // 与格林之子都在这里统一释放，否则它们的票据会留在渲染容器上继续画。
+            CharmEffects.ReleaseAllNoelCharmRenderTickets();
+            NoelGrimm.Stop();
             RegisterNoelPoseWhitelist(pr);
             // 骑士模式下立绘强制显示“进入战斗”姿态（EMSTATE.BATTLE），
             // 而不是静止在普通站姿；UIPicture.run 在骑士模式下被跳过，姿态保持。
