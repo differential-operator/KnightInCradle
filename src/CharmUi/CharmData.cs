@@ -166,7 +166,7 @@ namespace KnightInCradle.CharmUi
             new CharmData { Id = 29, KName = "生命血核心", KDesc = "包含一个活着的核心，流出宝贵的生命血。\n\n在长椅上休息时回复4格生命血血量。", KCost = 3, IconFile = "29_blue_heart_2", Name = "生命血核心", Cost = 3,
                 Desc = "异界的护符，能够将部分血量置换为魔力。\n\n感觉护符里有东西在看自己..." },
             new CharmData { Id = 30, KName = "乔尼的祝福", KDesc = "由仁慈的异教徒乔尼给予的祝福。使所有血量变成生命血，并提升血量上限。\n\n持有者无法聚集灵魂回复生命。", KCost = 4, IconFile = "30_Johnny", Name = "乔尼的祝福", Cost = 4,
-                Desc = "异界的护符，能够将部分全部血量置换为魔力。\n\n感觉全身的器官都被控制，但似乎还不错？" },
+                Desc = "异界的护符，能够将全部血量置换为魔力。\n\n感觉全身的器官都被控制，但似乎还不错？" },
             new CharmData { Id = 31, KName = "蜂巢之血", KDesc = "蜂巢中珍贵的金色硬化花蜜块。\n\n使持有者每10秒能够回复1血量", KCost = 4, IconFile = "31_hive", Name = "蜂巢之血", Cost = 4,
                 Desc = "蜂巢中珍贵的金色硬化花蜜块。\n\n使持有者能够缓慢恢复生命。" },
             new CharmData { Id = 32, KName = "蘑菇孢子", KDesc = "由活的真菌物质组成。\n\n凝聚将释放出一片孢子云，对敌人持续造成伤害。", KCost = 1, IconFile = "32_mushroom", Name = "蘑菇孢子", Cost = 1,
