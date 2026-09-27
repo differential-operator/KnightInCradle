@@ -5140,6 +5140,12 @@ namespace KnightInCradle.CharmUi
         private const float NoelShieldContactRadius = 0.85f;
         private const float NoelShieldDamage = 30f;         // 真实伤害
         private const float NoelShieldRenderScale = 0.24f;
+        // 渲染/碰撞偏移（同小骑士那套：渲染整体右 1 格再左 1 格 = 净 0；碰撞箱左 1 格、下 0.5 格）
+        private const float NoelShieldRenderOffX = 1f;
+        private const float NoelShieldRenderShiftX = -1f;
+        private const float NoelShieldRenderShiftY = 0.5f;
+        private const float NoelShieldCollisionOffX = -1f;
+        private const float NoelShieldCollisionOffY = 0.5f;
         private static float _noelShieldAngle;
         private static float _noelShieldOmega = 6.2831853f / NoelShieldPeriodBase;
         private static float _noelShieldOmegaFrom = 6.2831853f / NoelShieldPeriodBase;
@@ -5364,23 +5370,35 @@ namespace KnightInCradle.CharmUi
                 MdOut = _noelShieldMesh;
                 return true;
             }
+            // 坐标换算**照抄小骑士那份成品代码**（否则在 AIC 的非正方形网格下轨迹会变成椭圆）：
+            // 锚点定在诺艾尔中心 → 像素偏移 = (cos*R + 渲染偏移) * CLEN → 再按 ppu=64 换成网格单位；
+            // 纵向取负（网格 Y 向下为正，mesh Y 向上为正）。
             float c = mp.CLEN;
-            float px = (pr.x + Mathf.Cos(_noelShieldAngle) * NoelShieldOrbitRadius) * c;
-            float py = (pr.y + Mathf.Sin(_noelShieldAngle) * NoelShieldOrbitRadius + 0.5f) * c;
             Tk.Matrix = mp.gameObject.transform.localToWorldMatrix *
                         Matrix4x4.Translate(new Vector3(mp.pixel2ux(pr.x * c), mp.pixel2uy(pr.y * c), 0f));
+            float w = _noelShieldTex.width * NoelShieldRenderScale;
+            float h = _noelShieldTex.height * NoelShieldRenderScale;
             _noelShieldMesh.Col = MTRX.ColWhite;
             _noelShieldMesh.initForImgAndTexture(_noelShieldTex);
             _noelShieldMesh.uv_top = 0f;
             _noelShieldMesh.uv_height = 1f;
             _noelShieldMesh.uv_left = 0f;
             _noelShieldMesh.uv_width = 1f;
-            float w = _noelShieldTex.width * NoelShieldRenderScale;
-            float h = _noelShieldTex.height * NoelShieldRenderScale;
+            // 渲染中心（相对诺艾尔，像素）：右 1 格再左 1 格（净 0）、下 0.5 格
+            float px = (NoelShieldRenderOffX + NoelShieldRenderShiftX +
+                        Mathf.Cos(_noelShieldAngle) * NoelShieldOrbitRadius) * c;
+            float py = -(Mathf.Sin(_noelShieldAngle) * NoelShieldOrbitRadius + NoelShieldRenderShiftY) * c;
+            // 碰撞箱圆心（相对诺艾尔，格；游戏 Y 向下为正）——与渲染偏移相加后净为 cos/sin
+            float ccx = NoelShieldRenderOffX + Mathf.Cos(_noelShieldAngle) * NoelShieldOrbitRadius +
+                        NoelShieldCollisionOffX;
+            float ccy = Mathf.Sin(_noelShieldAngle) * NoelShieldOrbitRadius + NoelShieldCollisionOffY;
+            // 自转：贴图长边始终垂直于"碰撞箱圆心—诺艾尔中心下方 0.5 格"连线（同小骑士）
+            float A = Mathf.Atan2(0.5f - ccy, -ccx) + Mathf.PI * 0.5f;
+            float rotR = -A;
             Matrix4x4 savedM = _noelShieldMesh.getCurrentMatrix();
-            _noelShieldMesh.Translate((px - pr.x * c) * 0.015625f, -(py - pr.y * c) * 0.015625f, true);
-            _noelShieldMesh.Rotate(_noelShieldAngle, true);
-            _noelShieldMesh.Rect(-w * 0.5f, -h * 0.5f, w, h, false);
+            _noelShieldMesh.Translate(px * 0.015625f, py * 0.015625f, true);
+            _noelShieldMesh.Rotate(rotR, true);
+            _noelShieldMesh.Rect(0f, 0f, w, h, false);
             _noelShieldMesh.setCurrentMatrix(savedM, false);
             MdOut = _noelShieldMesh;
             return true;
