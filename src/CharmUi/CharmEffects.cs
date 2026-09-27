@@ -5143,9 +5143,9 @@ namespace KnightInCradle.CharmUi
         // 渲染/碰撞偏移（同小骑士那套：渲染整体右 1 格再左 1 格 = 净 0；碰撞箱左 1 格、下 0.5 格）
         private const float NoelShieldRenderOffX = 1f;
         private const float NoelShieldRenderShiftX = -1f;
-        private const float NoelShieldRenderShiftY = 0.5f;
+        private const float NoelShieldRenderShiftY = 0f; // 需求 2026-09-27：渲染中心上移 0.5 格（原为下移 0.5）
         private const float NoelShieldCollisionOffX = -1f;
-        private const float NoelShieldCollisionOffY = 0.5f;
+        private const float NoelShieldCollisionOffY = 0f; // 同上：判定中心一起上移 0.5 格
         private static float _noelShieldAngle;
         private static float _noelShieldOmega = 6.2831853f / NoelShieldPeriodBase;
         private static float _noelShieldOmegaFrom = 6.2831853f / NoelShieldPeriodBase;
@@ -5199,7 +5199,7 @@ namespace KnightInCradle.CharmUi
                     return;
                 }
                 float sx = pr.x + Mathf.Cos(_noelShieldAngle) * NoelShieldOrbitRadius;
-                float sy = pr.y + Mathf.Sin(_noelShieldAngle) * NoelShieldOrbitRadius + 0.5f;
+                float sy = pr.y + Mathf.Sin(_noelShieldAngle) * NoelShieldOrbitRadius;
                 int mask = NoelEnemyOverlapMask();
                 if (mask == 0)
                 {
