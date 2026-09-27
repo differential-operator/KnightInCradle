@@ -228,5 +228,664 @@ namespace KnightInCradle.CharmUi
         {
             return name != null && Tex.TryGetValue(name, out Texture2D tex) ? tex : null;
         }
+
+        // ---- 渲染票据（本体 + 火球，身前层 PR1，与梦之盾同一套写法）----
+        private static MeshDrawer _mesh;
+        private static Material _mat;
+        private static M2RenderTicket _ticket;
+        private static MeshDrawer _fbMesh;
+        private static Material _fbMat;
+        private static M2RenderTicket _fbTicket;
+        private static Map2d _map;
+        private static float _fbAnimTime;
+
+        /// <summary>剪辑时长（秒）= 帧数 / 帧率（同骑士的 `GetClipDuration`）。</summary>
+        public static float ClipDuration(string clipName)
+        {
+            if (!Clips.TryGetValue(clipName, out ClipData clip) || clip.fps <= 0f)
+            {
+                return 0.1f;
+            }
+            return clip.frames.Length / clip.fps;
+        }
+
+        /// <summary>诺艾尔侧的敌人掩码（与 `CharmEffects` 里那套一致：EnemySelf/Enemy/AttackHitable + 常见层）。</summary>
+        private static int EnemyMask()
+        {
+            int mask = LayerMask.GetMask("EnemySelf", "Enemy", "AttackHitable");
+            foreach (string name in new[] { "Ignore Raycast", "Water", "TransparentFX", "Default" })
+            {
+                int layer = LayerMask.NameToLayer(name);
+                if (layer >= 0)
+                {
+                    mask |= 1 << layer;
+                }
+            }
+            return mask;
+        }
+
+        private static bool FaceLeft(PRNoel pr)
+        {
+            try
+            {
+                return CAim._XD(pr.getAimForCaster(), 1) >= 0;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static float HoverTargetX(PRNoel pr)
+        {
+            return pr.x + (FaceLeft(pr) ? GrimmHoverOffX : -GrimmHoverOffX);
+        }
+
+        /// <summary>每帧推进（挂进 `TickNoelCharmEffects`）：状态机 + 火球 + 票据维护。</summary>
+        public static void Tick(PRNoel pr)
+        {
+            try
+            {
+                if (pr == null || CharmEffects.IsKnightMode ||
+                    !CharmEffects.IsEquipped(CharmOwner.Noel, CharmEffects.GrimmId))
+                {
+                    if (SoundState == 1)
+                    {
+                        DashAudio.StopGrimmIdleLoop();
+                    }
+                    SoundState = 0;
+                    Child = null;
+                    Fireballs.Clear();
+                    RespawnDelay = 0f;
+                    SitTimer = 0f;
+                    Release();
+                    return;
+                }
+                LoadAssets();
+                Ensure(pr);
+                float sdt = Time.deltaTime;
+                UpdateFireballs(pr, sdt);
+                if (RespawnDelay > 0f)
+                {
+                    RespawnDelay -= sdt;
+                    if (RespawnDelay > 0f)
+                    {
+                        if (SoundState == 1)
+                        {
+                            DashAudio.StopGrimmIdleLoop();
+                        }
+                        SoundState = 0;
+                        return;
+                    }
+                }
+                if (Child == null)
+                {
+                    Child = new GrimmChild
+                    {
+                        X = HoverTargetX(pr),
+                        Y = pr.y + GrimmHoverOffY,
+                        Phase = 0,
+                        AnimTime = 0f,
+                        AttackCd = 0f
+                    };
+                }
+                GrimmChild g = Child;
+                g.AnimTime += sdt;
+                if (g.Phase != 5 && SoundState != 1)
+                {
+                    DashAudio.PlayGrimmIdleLoop();
+                    SoundState = 1;
+                }
+                bool sitting = IsSitting(pr);
+                if (sitting)
+                {
+                    SitTimer += sdt;
+                    if (SitTimer >= GrimmSitSleepTime && g.Phase == 1)
+                    {
+                        g.Phase = 3;
+                        g.AnimTime = 0f;
+                        g.SleepStage = 0;
+                        g.SleepX = g.X;
+                        g.SleepGroundY = SleepGroundY(pr);
+                    }
+                }
+                else
+                {
+                    SitTimer = 0f;
+                    if (g.Phase == 3)
+                    {
+                        g.Phase = 4;
+                        g.AnimTime = 0f;
+                    }
+                }
+                if (g.Phase == 3)
+                {
+                    if (g.SleepStage == 0)
+                    {
+                        float dx = g.SleepX - g.X;
+                        float dy = g.SleepGroundY - g.Y;
+                        float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                        if (dist > 0.02f)
+                        {
+                            float spd = Mathf.Min(4f, dist * 4f);
+                            g.X += dx / dist * spd * sdt;
+                            g.Y += dy / dist * spd * sdt;
+                        }
+                        else
+                        {
+                            g.X = g.SleepX;
+                            g.Y = g.SleepGroundY;
+                            g.SleepStage = 1;
+                            g.AnimTime = 0f;
+                        }
+                    }
+                    else if (g.SleepStage == 1 && g.AnimTime >= ClipDuration("GrimmSleep"))
+                    {
+                        g.SleepStage = 2;
+                    }
+                    return;
+                }
+                if (g.Phase == 4)
+                {
+                    if (g.AnimTime >= ClipDuration("GrimmWake"))
+                    {
+                        g.Phase = 1;
+                        g.AnimTime = 0f;
+                    }
+                    return;
+                }
+                if (g.Phase == 2)
+                {
+                    if (g.AnimTime >= 0.4f)
+                    {
+                        Child = null; // 传送结束：下一帧在诺艾尔身边以"出现"重生
+                    }
+                    return;
+                }
+                if (g.Phase == 0)
+                {
+                    if (g.AnimTime >= ClipDuration("GrimmAppear"))
+                    {
+                        g.Phase = 1;
+                        g.AnimTime = 0f;
+                    }
+                    return;
+                }
+                if (g.Phase == 5)
+                {
+                    if (!g.Fired && g.AnimTime >= GrimmShootFireTime)
+                    {
+                        g.Fired = true;
+                        SpawnFireballs(pr, g);
+                    }
+                    if (g.AnimTime >= ClipDuration("GrimmIdle") * 1.5f + GrimmShootFireTime)
+                    {
+                        g.Phase = 1;
+                        g.AnimTime = 0f;
+                        g.AttackCd = GrimmAttackInterval;
+                        g.Target = null;
+                        DashAudio.PlayGrimmIdleLoop();
+                        SoundState = 1;
+                    }
+                    return;
+                }
+                // Phase 1：跟随 + 索敌
+                g.AttackCd -= sdt;
+                float hoverX = HoverTargetX(pr);
+                float hoverY = pr.y + GrimmHoverOffY;
+                float vx, vy;
+                SpeedOf(pr, out vx, out vy);
+                bool moving = Mathf.Abs(vx) > 0.05f || !pr.hasFoot();
+                float tdx = hoverX - g.X;
+                float tdy = hoverY - g.Y;
+                float tdist = Mathf.Sqrt(tdx * tdx + tdy * tdy);
+                if (tdist > 0.05f)
+                {
+                    float spd;
+                    if (moving)
+                    {
+                        float ownerSpd = Mathf.Abs(vx) * 60f;
+                        spd = Mathf.Clamp(tdist * 2.5f, ownerSpd * GrimmFollowLag, ownerSpd * GrimmMaxSpeedRatio);
+                    }
+                    else
+                    {
+                        spd = Mathf.Min(2.5f, tdist * 2.5f);
+                    }
+                    g.X += tdx / tdist * spd * sdt;
+                    g.Y += tdy / tdist * spd * sdt;
+                }
+                if (g.AttackCd <= 0f && FindTarget(pr, g))
+                {
+                    g.Phase = 5;
+                    g.AnimTime = 0f;
+                    g.Fired = false;
+                    if (SoundState == 1)
+                    {
+                        DashAudio.StopGrimmIdleLoop();
+                    }
+                    DashAudio.PlayGrimmAttackYelp();
+                    SoundState = 2;
+                    return;
+                }
+                float gdx = g.X - pr.x;
+                float gdy = g.Y - pr.y;
+                if (gdx * gdx + gdy * gdy > GrimmTeleportRange * GrimmTeleportRange)
+                {
+                    g.Phase = 2;
+                    g.AnimTime = 0f;
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static bool IsSitting(PRNoel pr)
+        {
+            try
+            {
+                return pr.isBenchState();
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static void SpeedOf(PRNoel pr, out float vx, out float vy)
+        {
+            vx = 0f;
+            vy = 0f;
+            try
+            {
+                // M2Mover.Phy 是 protected：反射读当前速度（格/帧@60，与骑士的 Vx/Vy 同单位）
+                if (_phyField == null)
+                {
+                    _phyField = HarmonyLib.AccessTools.Field(typeof(M2Mover), "Phy");
+                }
+                object phy = _phyField != null ? _phyField.GetValue(pr) : null;
+                if (phy == null)
+                {
+                    return;
+                }
+                if (_walkXsField == null)
+                {
+                    _walkXsField = HarmonyLib.AccessTools.Field(phy.GetType(), "walk_xspeed");
+                    _walkYsField = HarmonyLib.AccessTools.Field(phy.GetType(), "walk_yspeed");
+                }
+                if (_walkXsField != null)
+                {
+                    vx = (float)_walkXsField.GetValue(phy);
+                }
+                if (_walkYsField != null)
+                {
+                    vy = (float)_walkYsField.GetValue(phy);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static System.Reflection.FieldInfo _phyField;
+        private static System.Reflection.FieldInfo _walkXsField;
+        private static System.Reflection.FieldInfo _walkYsField;
+
+        private static float SleepGroundY(PRNoel pr)
+        {
+            try
+            {
+                return pr.mbottom + 0.5f;
+            }
+            catch (Exception)
+            {
+                return pr.y;
+            }
+        }
+
+        /// <summary>索敌（诺艾尔侧：6 格内最近敌人）。</summary>
+        private static bool FindTarget(PRNoel pr, GrimmChild g)
+        {
+            NelEnemy enemy = FindNearestEnemy(pr, g.X, g.Y);
+            if (enemy == null)
+            {
+                return false;
+            }
+            g.Target = enemy;
+            g.TargetIsWeed = false;
+            return true;
+        }
+
+        private static NelEnemy FindNearestEnemy(PRNoel pr, float sx, float sy)
+        {
+            try
+            {
+                Map2d mp = pr.Mp;
+                int mask = EnemyMask();
+                if (mp == null || mask == 0)
+                {
+                    return null;
+                }
+                Vector2 center = mp.gameObject.transform.TransformPoint(
+                    new Vector2(mp.pixel2ux(sx * mp.CLEN), mp.pixel2uy(sy * mp.CLEN)));
+                Collider2D[] hits = Physics2D.OverlapCircleAll(center, GrimmSeekRange, mask);
+                NelEnemy best = null;
+                float bestD = float.MaxValue;
+                for (int i = 0; i < hits.Length; i++)
+                {
+                    Collider2D c = hits[i];
+                    if (c == null)
+                    {
+                        continue;
+                    }
+                    NelEnemy enemy = c.GetComponentInParent<NelEnemy>();
+                    if (enemy == null || !enemy.is_alive)
+                    {
+                        continue;
+                    }
+                    float dx = enemy.x - sx;
+                    float dy = enemy.y - sy;
+                    float d = dx * dx + dy * dy;
+                    if (d < bestD)
+                    {
+                        bestD = d;
+                        best = enemy;
+                    }
+                }
+                return best;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>攻击时刻：向目标发射三枚火球（正中 + ±30°），与骑士一致。</summary>
+        private static void SpawnFireballs(PRNoel pr, GrimmChild g)
+        {
+            float tx;
+            float ty;
+            if (g.Target != null && g.Target.is_alive)
+            {
+                tx = g.Target.x;
+                ty = g.Target.y;
+            }
+            else
+            {
+                tx = g.X + (FaceLeft(pr) ? -1f : 1f);
+                ty = g.Y - 1f;
+            }
+            float baseAng = Mathf.Atan2(ty - g.Y, tx - g.X);
+            float[] offs = { 0f, GrimmFireballSpread, -GrimmFireballSpread };
+            for (int i = 0; i < offs.Length; i++)
+            {
+                float a = baseAng + offs[i];
+                Fireballs.Add(new GrimmFireball
+                {
+                    X = g.X,
+                    Y = g.Y,
+                    DirX = Mathf.Cos(a),
+                    DirY = Mathf.Sin(a),
+                    Life = GrimmFireballLife
+                });
+            }
+        }
+
+        /// <summary>火球推进：直线飞行、穿敌（每敌一次 30 真伤）、5 秒后销毁。</summary>
+        private static void UpdateFireballs(PRNoel pr, float sdt)
+        {
+            if (Fireballs.Count == 0)
+            {
+                return;
+            }
+            _fbAnimTime += sdt;
+            Map2d mp = pr.Mp;
+            int mask = EnemyMask();
+            for (int i = Fireballs.Count - 1; i >= 0; i--)
+            {
+                GrimmFireball fb = Fireballs[i];
+                fb.X += fb.DirX * GrimmFireballSpeed * sdt;
+                fb.Y += fb.DirY * GrimmFireballSpeed * sdt;
+                fb.Life -= sdt;
+                bool remove = fb.Life <= 0f;
+                if (!remove && mp != null && mask != 0)
+                {
+                    Vector2 center = mp.gameObject.transform.TransformPoint(
+                        new Vector2(mp.pixel2ux(fb.X * mp.CLEN), mp.pixel2uy(fb.Y * mp.CLEN)));
+                    Collider2D[] hits = Physics2D.OverlapCircleAll(center, GrimmFireballRadius, mask);
+                    for (int j = 0; j < hits.Length; j++)
+                    {
+                        Collider2D c = hits[j];
+                        if (c == null)
+                        {
+                            continue;
+                        }
+                        NelEnemy enemy = c.GetComponentInParent<NelEnemy>();
+                        if (enemy == null || !enemy.is_alive || !fb.Hits.Add(enemy))
+                        {
+                            continue;
+                        }
+                        ApplyFireballDamage(pr, enemy);
+                    }
+                }
+                if (remove)
+                {
+                    Fireballs.RemoveAt(i);
+                }
+            }
+        }
+
+        /// <summary>火球伤害：30 点真实伤害（与骑士一致）。</summary>
+        private static void ApplyFireballDamage(PRNoel pr, NelEnemy enemy)
+        {
+            try
+            {
+                var atk = new NelAttackInfo();
+                atk.fix_damage = true;
+                atk.Caster = pr;
+                atk.AttackFrom = pr;
+                atk.hpdmg0 = GrimmFireballDamage;
+                atk.hpdmg_current = GrimmFireballDamage;
+                atk._apply_knockback_current = true;
+                atk.CenterXy(enemy.x, enemy.y, 0f);
+                enemy.applyDamage(atk, false);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void Ensure(PRNoel pr)
+        {
+            Map2d mp = pr.Mp;
+            if (mp == null || _mesh != null && _map == mp)
+            {
+                return;
+            }
+            Release();
+            _map = mp;
+            _mesh = new MeshDrawer(null, 4, 6);
+            _mesh.draw_gl_only = true;
+            _mat = MTRX.newMtr(MTRX.ShaderGDT);
+            _mat.EnableKeyword("NO_PIXELSNAP");
+            _mesh.activate("noel_grimm", _mat, false, MTRX.ColWhite, null);
+            _ticket = mp.MovRenderer.assignDrawable(M2Mover.DRAW_ORDER.PR1, null, PrepareMesh, _mesh, null, null);
+            _fbMesh = new MeshDrawer(null, 4 * 8, 6 * 8);
+            _fbMesh.draw_gl_only = true;
+            _fbMat = MTRX.newMtr(MTRX.ShaderGDT);
+            _fbMat.EnableKeyword("NO_PIXELSNAP");
+            _fbMesh.activate("noel_grimm_fireball", _fbMat, false, MTRX.ColWhite, null);
+            _fbTicket = mp.MovRenderer.assignDrawable(M2Mover.DRAW_ORDER.PR1, null, PrepareFireballMesh, _fbMesh, null, null);
+        }
+
+        private static void Release()
+        {
+            try
+            {
+                if (_ticket != null && _map != null && _map.MovRenderer != null)
+                {
+                    _map.MovRenderer.deassignDrawable(_ticket, -1);
+                }
+                if (_fbTicket != null && _map != null && _map.MovRenderer != null)
+                {
+                    _map.MovRenderer.deassignDrawable(_fbTicket, -1);
+                }
+            }
+            catch (Exception)
+            {
+            }
+            try
+            {
+                if (_mat != null)
+                {
+                    IN.DestroyOne(_mat);
+                }
+                if (_fbMat != null)
+                {
+                    IN.DestroyOne(_fbMat);
+                }
+            }
+            catch (Exception)
+            {
+            }
+            _ticket = null;
+            _mesh = null;
+            _mat = null;
+            _fbTicket = null;
+            _fbMesh = null;
+            _fbMat = null;
+            _map = null;
+        }
+
+        private static bool PrepareMesh(Camera Cam, M2RenderTicket Tk, bool need_redraw, int draw_id,
+            out MeshDrawer MdOut, ref bool color_one_overwrite)
+        {
+            MdOut = null;
+            Map2d mp = _map;
+            if (mp == null || _mesh == null || draw_id != 0)
+            {
+                return false;
+            }
+            _mesh.clearSimple();
+            _mesh.Identity();
+            PRNoel pr = KnightInCradleBehaviour.GetPrPublic();
+            GrimmChild g = Child;
+            if (pr == null || g == null || CharmEffects.IsKnightMode ||
+                !CharmEffects.IsEquipped(CharmOwner.Noel, CharmEffects.GrimmId))
+            {
+                MdOut = _mesh;
+                return true;
+            }
+            string sprite;
+            if (g.Phase == 0)
+            {
+                sprite = Frame("GrimmAppear", g.AnimTime, false);
+            }
+            else if (g.Phase == 2)
+            {
+                sprite = Frame("GrimmIdle", g.AnimTime, true);
+            }
+            else if (g.Phase == 3)
+            {
+                sprite = g.SleepStage == 1
+                    ? Frame("GrimmSleep", g.AnimTime, false)
+                    : Frame("GrimmFly", g.AnimTime, true);
+                if (g.SleepStage == 2)
+                {
+                    sprite = Frame("GrimmSleep", 99f, false);
+                }
+            }
+            else if (g.Phase == 4)
+            {
+                sprite = Frame("GrimmWake", g.AnimTime, false);
+            }
+            else
+            {
+                bool moving = Mathf.Abs(g.X - pr.x) > 0.35f || Mathf.Abs(g.Y - (pr.y + GrimmHoverOffY)) > 0.35f;
+                sprite = Frame(g.Phase == 5 ? "GrimmIdle" : (moving ? "GrimmFly" : "GrimmIdle"), g.AnimTime, true);
+            }
+            Texture2D tex = Texture(sprite);
+            if (tex == null)
+            {
+                MdOut = _mesh;
+                return true;
+            }
+            float c = mp.CLEN;
+            Tk.Matrix = mp.gameObject.transform.localToWorldMatrix *
+                        Matrix4x4.Translate(new Vector3(mp.pixel2ux(pr.x * c), mp.pixel2uy(pr.y * c), 0f));
+            float px = (g.X - pr.x) * c;
+            float py = -(g.Y - pr.y) * c;
+            float w = tex.width * GrimmScale;
+            float h = tex.height * GrimmScale;
+            _mesh.Col = MTRX.ColWhite;
+            _mesh.initForImgAndTexture(tex);
+            _mesh.uv_top = 0f;
+            _mesh.uv_height = 1f;
+            if (FaceLeft(pr))
+            {
+                _mesh.uv_left = 1f;
+                _mesh.uv_width = -1f;
+            }
+            else
+            {
+                _mesh.uv_left = 0f;
+                _mesh.uv_width = 1f;
+            }
+            Matrix4x4 saved = _mesh.getCurrentMatrix();
+            _mesh.Translate(px * 0.015625f, py * 0.015625f, true);
+            _mesh.Rect(-w * 0.5f, -h * 0.5f, w, h, false);
+            _mesh.setCurrentMatrix(saved, false);
+            MdOut = _mesh;
+            return true;
+        }
+
+        private static bool PrepareFireballMesh(Camera Cam, M2RenderTicket Tk, bool need_redraw, int draw_id,
+            out MeshDrawer MdOut, ref bool color_one_overwrite)
+        {
+            MdOut = null;
+            Map2d mp = _map;
+            if (mp == null || _fbMesh == null || draw_id != 0)
+            {
+                return false;
+            }
+            _fbMesh.clearSimple();
+            _fbMesh.Identity();
+            PRNoel pr = KnightInCradleBehaviour.GetPrPublic();
+            if (pr == null || Fireballs.Count == 0 || CharmEffects.IsKnightMode)
+            {
+                MdOut = _fbMesh;
+                return true;
+            }
+            string sprite = Frame("GrimmFireball", _fbAnimTime, true);
+            Texture2D tex = Texture(sprite);
+            if (tex == null)
+            {
+                MdOut = _fbMesh;
+                return true;
+            }
+            float c = mp.CLEN;
+            Tk.Matrix = mp.gameObject.transform.localToWorldMatrix *
+                        Matrix4x4.Translate(new Vector3(mp.pixel2ux(pr.x * c), mp.pixel2uy(pr.y * c), 0f));
+            _fbMesh.initForImgAndTexture(tex);
+            _fbMesh.uv_top = 0f;
+            _fbMesh.uv_height = 1f;
+            _fbMesh.uv_left = 0f;
+            _fbMesh.uv_width = 1f;
+            float w = tex.width * GrimmFireballScale;
+            float h = tex.height * GrimmFireballScale;
+            for (int i = 0; i < Fireballs.Count; i++)
+            {
+                GrimmFireball fb = Fireballs[i];
+                float px = (fb.X - pr.x) * c;
+                float py = -(fb.Y - pr.y) * c;
+                _fbMesh.Col = MTRX.ColWhite;
+                Matrix4x4 saved = _fbMesh.getCurrentMatrix();
+                _fbMesh.Translate(px * 0.015625f, py * 0.015625f, true);
+                _fbMesh.Rect(-w * 0.5f, -h * 0.5f, w, h, false);
+                _fbMesh.setCurrentMatrix(saved, false);
+            }
+            MdOut = _fbMesh;
+            return true;
+        }
     }
 }
