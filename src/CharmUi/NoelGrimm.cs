@@ -98,7 +98,17 @@ namespace KnightInCradle.CharmUi
                 {
                     try
                     {
-                        return Noel != null && CAim._XD(Noel.getAimForCaster(), 1) >= 0;
+                        if (Noel == null)
+                        {
+                            return false;
+                        }
+                        int aimX = CAim._XD(Noel.getAimForCaster(), 1);
+                        if (aimX != 0)
+                        {
+                            return aimX < 0;
+                        }
+                        // 正上/正下瞄准时用本体朝向兜底（mpf_is_right>=0 表示面朝右）
+                        return Noel.mpf_is_right < 0f;
                     }
                     catch (Exception)
                     {

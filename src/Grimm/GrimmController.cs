@@ -548,7 +548,8 @@ namespace KnightInCradle.Grimm
             _mesh.initForImgAndTexture(tex);
             _mesh.uv_top = 0f;
             _mesh.uv_height = 1f;
-            if (_host.FacingLeft)
+            // 素材默认朝左（-X）：只有角色面朝右时才需要水平镜像
+            if (!_host.FacingLeft)
             {
                 _mesh.uv_left = 1f;
                 _mesh.uv_width = -1f;
@@ -560,7 +561,8 @@ namespace KnightInCradle.Grimm
             }
             Matrix4x4 saved = _mesh.getCurrentMatrix();
             _mesh.Translate(px * 0.015625f, py * 0.015625f, true);
-            _mesh.Rect(-w * 0.5f, -h * 0.5f, w, h, false);
+            // Rect 的 (x,y) 是矩形中心：传 (0,0) 让贴图中心正好落在悬浮点上
+            _mesh.Rect(0f, 0f, w, h, false);
             _mesh.setCurrentMatrix(saved, false);
             MdOut = _mesh;
             return true;
@@ -605,7 +607,7 @@ namespace KnightInCradle.Grimm
                 _fbMesh.Col = MTRX.ColWhite;
                 Matrix4x4 saved = _fbMesh.getCurrentMatrix();
                 _fbMesh.Translate((fb.X - _host.X) * c * 0.015625f, -(fb.Y - _host.Y) * c * 0.015625f, true);
-                _fbMesh.Rect(-w * 0.5f, -h * 0.5f, w, h, false);
+                _fbMesh.Rect(0f, 0f, w, h, false);
                 _fbMesh.setCurrentMatrix(saved, false);
             }
             MdOut = _fbMesh;
