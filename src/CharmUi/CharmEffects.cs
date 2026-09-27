@@ -2026,6 +2026,55 @@ namespace KnightInCradle.CharmUi
                    JoniBlessingActive(noel);
         }
 
+        // ================= 护符41 国王之魂（诺艾尔侧） =================
+        /// <summary>国王之魂：回复间隔（秒）。</summary>
+        public const float KingsoulIntervalSeconds = 2f;
+        /// <summary>国王之魂：每次回复的 MP。</summary>
+        public const float KingsoulMpAmount = 5f;
+        private static float _noelKingsoulTimer;
+
+        /// <summary>
+        /// 护符41 国王之魂（诺艾尔侧）：**每 2 秒回复 5 点 MP**。
+        /// 走诺艾尔自己的魔力通道（`GrantNoelMana` + 刷 HUD），
+        /// 因此骑士模式下按快照结算、切回诺艾尔后魔力保留。
+        /// </summary>
+        public static void TickNoelKingsoulCharm(PRNoel pr)
+        {
+            try
+            {
+                if (pr == null)
+                {
+                    return;
+                }
+                if (IsKnightMode || !IsEquipped(CharmOwner.Noel, KingsoulId))
+                {
+                    _noelKingsoulTimer = 0f;
+                    return;
+                }
+                if (!pr.is_alive)
+                {
+                    return;
+                }
+                _noelKingsoulTimer += Time.deltaTime;
+                if (_noelKingsoulTimer < KingsoulIntervalSeconds)
+                {
+                    return;
+                }
+                _noelKingsoulTimer -= KingsoulIntervalSeconds;
+                if (_noelKingsoulTimer > KingsoulIntervalSeconds)
+                {
+                    _noelKingsoulTimer = 0f; // 长时间没推进（过图/暂停）时不补算
+                }
+                if (KnightInCradleBehaviour.GrantNoelMana(KingsoulMpAmount))
+                {
+                    RefreshNoelHudMp();
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
         /// <summary>壳动画推进：一次性剪辑播完 → 展开时停在持有帧，收起时消失。</summary>
         private static void AdvanceNoelShell(float dt)
         {
