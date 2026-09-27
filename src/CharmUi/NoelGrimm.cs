@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using m2d;
 using nel;
 using UnityEngine;
@@ -136,6 +137,9 @@ namespace KnightInCradle.CharmUi
                 }
             }
 
+            /// <summary>坐椅睡眠落地基准：诺艾尔脚底再往下 0.5 格。</summary>
+            public float SleepGroundBaseY => FootY + 0.5f;
+
             public bool Grounded
             {
                 get
@@ -194,12 +198,77 @@ namespace KnightInCradle.CharmUi
                 }
             }
 
-            /// <summary>火球伤害：30 真伤（与骑士一致）。</summary>
-            public void ApplyGrimmFireballDamage(NelEnemy enemy, int damage)
+            public float HoverOffX => 1.2f;
+            public float HoverOffY => -1.1f;
+
+            /// <summary>诺艾尔侧索敌：6 格内最近的魔物（无爱丽丝 / 魔力草层次）。</summary>
+            public bool TryAcquireTarget(float x, float y, float range, out float tx, out float ty,
+                out object token)
+            {
+                tx = 0f;
+                ty = 0f;
+                token = null;
+                try
+                {
+                    Map2d mp = Map;
+                    int mask = EnemyMask;
+                    if (mp == null || mp.gameObject == null || mask == 0)
+                    {
+                        return false;
+                    }
+                    Vector2 center = mp.gameObject.transform.TransformPoint(
+                        new Vector2(mp.pixel2ux(x * mp.CLEN), mp.pixel2uy(y * mp.CLEN)));
+                    Collider2D[] hits = Physics2D.OverlapCircleAll(center, range, mask);
+                    NelEnemy best = null;
+                    float bestD = float.MaxValue;
+                    for (int i = 0; i < hits.Length; i++)
+                    {
+                        Collider2D c = hits[i];
+                        if (c == null)
+                        {
+                            continue;
+                        }
+                        NelEnemy enemy = c.GetComponentInParent<NelEnemy>();
+                        if (enemy == null || !enemy.is_alive)
+                        {
+                            continue;
+                        }
+                        float dx = enemy.x - x;
+                        float dy = enemy.y - y;
+                        float d = dx * dx + dy * dy;
+                        if (d < bestD)
+                        {
+                            bestD = d;
+                            best = enemy;
+                        }
+                    }
+                    if (best == null)
+                    {
+                        return false;
+                    }
+                    tx = best.x;
+                    ty = best.y;
+                    token = best;
+                    return true;
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+            }
+
+            /// <summary>火球命中魔物：30 真伤（与骑士一致），同一目标只结算一次。</summary>
+            public void OnGrimmFireballCollider(object token, Collider2D col, int damage,
+                HashSet<object> hits)
             {
                 try
                 {
-                    if (enemy == null || Noel == null)
+                    if (col == null || Noel == null)
+                    {
+                        return;
+                    }
+                    NelEnemy enemy = col.GetComponentInParent<NelEnemy>();
+                    if (enemy == null || !enemy.is_alive || !hits.Add(enemy))
                     {
                         return;
                     }
@@ -216,6 +285,12 @@ namespace KnightInCradle.CharmUi
                 catch (Exception)
                 {
                 }
+            }
+
+            /// <summary>诺艾尔侧没有额外火球副作用（爱丽丝 / 魔力草只在小骑士侧）。</summary>
+            public void OnGrimmFireballTick(object token, float x, float y, float radius,
+                HashSet<object> hits, ref bool destroy)
+            {
             }
         }
     }

@@ -13,6 +13,7 @@ using Newtonsoft.Json.Linq;
 using UnityEngine;
 using XX;
 using KnightInCradle.CharmUi;
+using KnightInCradle.Grimm;
 
 namespace KnightInCradle
 {
@@ -4062,565 +4063,320 @@ namespace KnightInCradle
 
         // ---------- 护符39 格林之子 ----------
 
+        private GrimmController _grimmCtl;
+
         /// <summary>
-        /// 每帧推进小格林：
-        /// 出现（turn）→ 待机（idle，站立/坐椅）/ 跟随（fly_full，走路，速度略慢）；
-        /// 坐椅超 3 秒入睡（sleep，落地保持末帧），起身反向播睡眠再缓缓升空；
-        /// 离骑士超 3.5 格原地播 teleport 后删除，在骑士身边重生（turn）。
+        /// 每帧推进小格林。状态机 / 火球 / 渲染全部走与角色无关的共享实现
+        /// <see cref="KnightInCradle.Grimm.GrimmController"/>，
+        /// 小骑士侧只提供宿主信息：坐标/朝向/坐椅、索敌层次（联机代理 &gt; 魔物 &gt; 爱丽丝 &gt; 魔力草）
+        /// 与自己的伤害管线。
         /// </summary>
         private void UpdateGrimm(float sdt)
         {
-            if (!CharmEffects.IsEquipped(CharmEffects.GrimmId))
+            if (_grimmCtl == null)
             {
-                _grimm = null;
-                _grimmFireballs.Clear();
-                _grimmRespawnDelay = 0f;
-                _grimmSitTimer = 0f;
-                if (_grimmSoundState == 1)
-                {
-                    DashAudio.StopGrimmIdleLoop();
-                }
-                _grimmSoundState = 0;
-                return;
+                _grimmCtl = new GrimmController(new KnightGrimmHost(this));
             }
-            // 火球推进（不受小格林状态/过图倒计时影响，只要护符佩戴中）
-            UpdateGrimmFireballs(sdt);
-            // 过图后重生倒计时（同编织者之歌：等骑士在新地图稳定再生成）
-            if (_grimmRespawnDelay > 0f)
+            _grimmCtl.Tick(sdt);
+        }
+
+        /// <summary>过图：小格林与旧地图坐标的火球一并清除；respawnDelay 同编织者之歌（等新地图稳定）。</summary>
+        private void ResetGrimmOnMapChange(bool respawnDelay)
+        {
+            if (_grimmCtl != null)
             {
-                _grimmRespawnDelay -= sdt;
-                if (_grimmRespawnDelay > 0f)
+                _grimmCtl.NotifyMapChanged(respawnDelay);
+            }
+        }
+
+        /// <summary>小骑士侧的格林之子宿主：角色信息 + 骑士自己的索敌与伤害管线。</summary>
+        private sealed class KnightGrimmHost : IGrimmHost
+        {
+            private readonly KnightEntity K;
+
+            public KnightGrimmHost(KnightEntity k)
+            {
+                K = k;
+            }
+
+            public bool GrimmEquipped => CharmEffects.IsEquipped(CharmEffects.GrimmId);
+
+            public bool Active => K._mp != null && K._mp.gameObject != null;
+
+            public float X => K.X;
+            public float Y => K.Y;
+            public float Vx => K.Vx;
+            public float Vy => K.Vy;
+
+            /// <summary>面朝约定：_faceDir&gt;0=面朝左（后方在右）。</summary>
+            public bool FacingLeft => K._faceDir > 0f;
+
+            public bool Sitting => K.IsSitting;
+
+            /// <summary>坐椅睡眠落地基准（控制器再减去睡眠帧半高，使贴图底边贴地）。</summary>
+            public float SleepGroundBaseY => K._sitGroundY + KnightEntity.SizeY;
+
+            public bool Grounded => K.Grounded;
+
+            public Map2d Map => K._mp;
+
+            public int MapRevision => K._mp != null
+                ? System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(K._mp)
+                : 0;
+
+            public int EnemyMask => K.GetEnemyOverlapMask();
+
+            public float HoverOffX => 0.8f;
+            public float HoverOffY => -1.1f;
+
+            /// <summary>索敌层次：联机仇恨代理 &gt; 魔物 &gt; 爱丽丝 &gt; 魔力草（沿用骑士原实现）。</summary>
+            public bool TryAcquireTarget(float x, float y, float range, out float tx, out float ty,
+                out object token)
+            {
+                tx = 0f;
+                ty = 0f;
+                token = null;
+                try
                 {
-                    if (_grimmSoundState == 1)
+                    M2Attackable aggro = K.FindNearestPvpAggroTarget(x, y, range);
+                    if (aggro != null)
                     {
-                        DashAudio.StopGrimmIdleLoop();
+                        tx = aggro.x;
+                        ty = aggro.y;
+                        token = aggro;
+                        return true;
                     }
-                    _grimmSoundState = 0;
-                    return;
-                }
-            }
-            if (_grimm == null)
-            {
-                _grimm = new GrimmChild
-                {
-                    X = GrimmHoverTargetX(),
-                    Y = Y + GrimmHoverOffY,
-                    Phase = 0,
-                    AnimTime = 0f,
-                    AttackCd = 0f,
-                    Target = null
-                };
-            }
-            GrimmChild g = _grimm;
-            g.AnimTime += sdt;
-            // 非攻击状态：循环播放待机音
-            if (g.Phase != 5 && _grimmSoundState != 1)
-            {
-                DashAudio.PlayGrimmIdleLoop();
-                _grimmSoundState = 1;
-            }
-
-            bool sitting = IsSitting;
-            if (sitting)
-            {
-                _grimmSitTimer += sdt;
-                if (_grimmSitTimer >= GrimmSitSleepTime && g.Phase == 1)
-                {
-                    // 坐椅超时：入睡（原地垂直落下，不横向移动）
-                    g.Phase = 3;
-                    g.AnimTime = 0f;
-                    g.SleepStage = 0;
-                    g.SleepX = g.X;
-                    g.SleepGroundY = GetGrimmSleepGroundY();
-                }
-            }
-            else
-            {
-                _grimmSitTimer = 0f;
-                if (g.Phase == 3)
-                {
-                    // 起身：反向睡眠动画（播到 sleep0000 即回活跃）
-                    g.Phase = 4;
-                    g.AnimTime = 0f;
-                }
-            }
-
-            if (g.Phase == 3) // 睡眠
-            {
-                if (g.SleepStage == 0)
-                {
-                    Vector2 toSleep = new Vector2(g.SleepX - g.X, g.SleepGroundY - g.Y);
-                    float dist = toSleep.magnitude;
-                    if (dist > 0.02f)
+                    NelEnemy enemy = FindNearestGrimmEnemy(x, y, range);
+                    if (enemy != null)
                     {
-                        float spd = Mathf.Min(4f, dist * 4f);
-                        toSleep /= dist;
-                        g.X += toSleep.x * spd * sdt;
-                        g.Y += toSleep.y * spd * sdt;
+                        tx = enemy.x;
+                        ty = enemy.y;
+                        token = enemy;
+                        return true;
                     }
-                    else
+                    // 爱丽丝（任意房间）：佩戴格林之子时小格林攻击爱丽丝，但不造成伤害
+                    if (TryFindGrimmAlice(x, y, range, out AlicePVV200 alice))
                     {
-                        g.X = g.SleepX;
-                        g.Y = g.SleepGroundY;
-                        g.SleepStage = 1;
-                        g.AnimTime = 0f;
+                        tx = alice.x;
+                        ty = alice.y;
+                        token = alice;
+                        return true;
+                    }
+                    if (FindNearestGrimmWeed(x, y, range, out float wx, out float wy))
+                    {
+                        tx = wx;
+                        ty = wy;
+                        token = null;
+                        return true;
                     }
                 }
-                else if (g.SleepStage == 1 && g.AnimTime >= GetClipDuration("GrimmSleep"))
+                catch (Exception)
                 {
-                    g.SleepStage = 2; // 保持睡眠末帧
                 }
-                return;
-            }
-            if (g.Phase == 4) // 苏醒：反向睡眠（sleep0002→0000）播完后直接回活跃，由 Phase1 自动升回追随点
-            {
-                if (g.AnimTime >= GetClipDuration("GrimmWake"))
-                {
-                    g.Phase = 1;
-                    g.AnimTime = 0f;
-                }
-                return;
-            }
-            if (g.Phase == 2) // 传送：原地播完 teleport，删除并在骑士身边重生
-            {
-                if (g.AnimTime >= GetClipDuration("GrimmTeleport"))
-                {
-                    _grimm = null; // 下一帧以 turn 出生
-                }
-                return;
-            }
-            if (g.Phase == 0) // 出现：播完 turn 进入活跃
-            {
-                if (g.AnimTime >= GetClipDuration("GrimmAppear"))
-                {
-                    g.Phase = 1;
-                    g.AnimTime = 0f;
-                }
-                return;
-            }
-            if (g.Phase == 5) // 攻击：播 shoot，0004 帧瞬间发射三枚火球
-            {
-                if (!g.Fired && g.AnimTime >= GrimmShootFireTime)
-                {
-                    g.Fired = true;
-                    GrimmSpawnFireballs(g);
-                }
-                if (g.AnimTime >= GetClipDuration("GrimmShoot"))
-                {
-                    g.Phase = 1;
-                    g.AnimTime = 0f;
-                    g.AttackCd = GrimmAttackInterval;
-                    g.Target = null;
-                    g.AliceTarget = null;
-                    DashAudio.PlayGrimmIdleLoop(); // 攻击结束恢复待机循环
-                    _grimmSoundState = 1;
-                }
-                return;
-            }
-
-            // Phase 1 活跃：待机悬浮 / 跟随
-            g.AttackCd -= sdt;
-            float hoverX = GrimmHoverTargetX();
-            float hoverY = Y + GrimmHoverOffY;
-            bool knightMoving = Mathf.Abs(Vx) > 0.05f || !Grounded;
-            Vector2 toTarget = new Vector2(hoverX - g.X, hoverY - g.Y);
-            float tDist = toTarget.magnitude;
-            if (tDist > 0.05f)
-            {
-                toTarget /= tDist;
-                float spd;
-                if (knightMoving)
-                {
-                    // 跟随：正常略低于骑士；远时加速追赶，但最大不超过骑士速度的 2 倍
-                    // Vx 为“格/帧@60”单位，×60 换算为“格/秒”再参与真实秒积分
-                    float knightSpd = Mathf.Abs(Vx) * 60f;
-                    float followSpd = knightSpd * GrimmFollowLag;
-                    float maxSpd = knightSpd * GrimmMaxSpeedRatio;
-                    spd = Mathf.Clamp(tDist * 2.5f, followSpd, maxSpd);
-                }
-                else
-                {
-                    spd = Mathf.Min(2.5f, tDist * 2.5f);
-                }
-                g.X += toTarget.x * spd * sdt;
-                g.Y += toTarget.y * spd * sdt;
-            }
-            // 攻击触发：冷却结束且范围内有目标（敌人优先，其次魔力草）
-            if (g.AttackCd <= 0f && FindGrimmTarget(g))
-            {
-                g.Phase = 5;
-                g.AnimTime = 0f;
-                g.Fired = false;
-                if (_grimmSoundState == 1)
-                {
-                    DashAudio.StopGrimmIdleLoop();
-                }
-                DashAudio.PlayGrimmAttackYelp(); // 攻击瞬间播放 yelp
-                _grimmSoundState = 2;
-                return;
-            }
-            // 距离检测：离骑士超 3.5 格 → 原地传送动画后重生
-            float gdx = g.X - X;
-            float gdy = g.Y - Y;
-            if (gdx * gdx + gdy * gdy > GrimmTeleportRange * GrimmTeleportRange)
-            {
-                g.Phase = 2;
-                g.AnimTime = 0f;
-            }
-        }
-
-        /// <summary>
-        /// 小格林追随点 X：位于小骑士后上方（面朝方向的反方向）。
-        /// 面朝约定：_faceDir&gt;0=面朝左（后方在右），_faceDir&lt;0=面朝右（后方在左）。
-        /// </summary>
-        private float GrimmHoverTargetX()
-        {
-            return X + (_faceDir > 0f ? GrimmHoverOffX : -GrimmHoverOffX);
-        }
-
-        /// <summary>坐椅时小格林落地的目标 Y（睡眠贴图底边贴地）。</summary>
-        private float GetGrimmSleepGroundY()
-        {
-            float groundY = _sitGroundY + SizeY;
-            if (_mp != null && _clips.TryGetValue("GrimmSleep", out ClipData sc) &&
-                sc.frames.Length > 0 &&
-                _textures.TryGetValue(sc.frames[sc.frames.Length - 1], out Texture2D tex))
-            {
-                groundY -= tex.height * GrimmScale / (2f * _mp.CLEN);
-            }
-            return groundY;
-        }
-
-        /// <summary>按剪辑取当前帧（loop=循环，否则播完停末帧）。</summary>
-        private string GrimmFrame(string clipName, float t, bool loop)
-        {
-            if (!_clips.TryGetValue(clipName, out ClipData clip) || clip.frames.Length == 0)
-            {
-                return null;
-            }
-            int idx = loop
-                ? (int)(t * clip.fps) % clip.frames.Length
-                : Mathf.Clamp((int)(t * clip.fps), 0, clip.frames.Length - 1);
-            return clip.frames[idx];
-        }
-
-        /// <summary>
-        /// 小格林索敌：6 格半径内优先级为 敌人 &gt; 爱丽丝 &gt; 魔力草。
-        /// 攻击爱丽丝不造成伤害。返回是否找到目标。
-        /// </summary>
-        private bool FindGrimmTarget(GrimmChild g)
-        {
-            M2Attackable aggro = FindNearestPvpAggroTarget(g.X, g.Y, GrimmSeekRange);
-            if (aggro != null)
-            {
-                g.Target = aggro;
-                g.TargetIsWeed = false;
-                return true;
-            }
-            NelEnemy enemy = FindNearestGrimmEnemy(g.X, g.Y);
-            if (enemy != null)
-            {
-                g.Target = enemy;
-                g.TargetIsWeed = false;
-                g.AliceTarget = null;
-                return true;
-            }
-            // 爱丽丝（任意房间）：佩戴格林之子时小格林攻击爱丽丝，但不造成伤害
-            if (TryFindGrimmAlice(g.X, g.Y, out AlicePVV200 alice))
-            {
-                g.Target = null;
-                g.TargetIsWeed = false;
-                g.AliceTarget = alice;
-                return true;
-            }
-            if (FindNearestGrimmWeed(g.X, g.Y, out float wx, out float wy))
-            {
-                g.Target = null;
-                g.TargetIsWeed = true;
-                g.AliceTarget = null;
-                g.WeedTargetX = wx;
-                g.WeedTargetY = wy;
-                return true;
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// 查找当前房间里的爱丽丝（AlicePVV200）作为小格林攻击目标：
-        /// 6 格半径内最近者；攻击爱丽丝不造成伤害（火球命中即消失）。
-        /// </summary>
-        private bool TryFindGrimmAlice(float sx, float sy, out AlicePVV200 alice)
-        {
-            alice = null;
-            if (_mp == null)
-            {
                 return false;
             }
-            try
+
+            /// <summary>查找当前房间里的爱丽丝（AlicePVV200）：range 格内最近者；火球命中即消失、不造成伤害。</summary>
+            private bool TryFindGrimmAlice(float sx, float sy, float range, out AlicePVV200 alice)
             {
-                int count = _mp.count_movers;
-                for (int i = 0; i < count; i++)
+                alice = null;
+                if (K._mp == null)
                 {
-                    M2Mover mv = _mp.getMv(i);
-                    if (mv is AlicePVV200 a && !a.destructed)
+                    return false;
+                }
+                try
+                {
+                    int count = K._mp.count_movers;
+                    for (int i = 0; i < count; i++)
                     {
-                        float dx = a.x - sx;
-                        float dy = a.y - sy;
-                        if (dx * dx + dy * dy <= GrimmSeekRange * GrimmSeekRange)
+                        M2Mover mv = K._mp.getMv(i);
+                        if (mv is AlicePVV200 a && !a.destructed)
                         {
-                            alice = a;
-                            return true;
+                            float dx = a.x - sx;
+                            float dy = a.y - sy;
+                            if (dx * dx + dy * dy <= range * range)
+                            {
+                                alice = a;
+                                return true;
+                            }
                         }
                     }
                 }
+                catch (Exception)
+                {
+                }
+                return false;
             }
-            catch (Exception)
-            {
-            }
-            return false;
-        }
 
-        /// <summary>6 格半径内最近敌人（复刻小编织者索敌，范围改为 6）。</summary>
-        private NelEnemy FindNearestGrimmEnemy(float sx, float sy)
-        {
-            if (_mp == null || _mp.gameObject == null)
+            /// <summary>range 格内最近敌人（复刻小编织者索敌，范围改为 range）。</summary>
+            private NelEnemy FindNearestGrimmEnemy(float sx, float sy, float range)
             {
-                return null;
-            }
-            try
-            {
-                int mask = GetEnemyOverlapMask();
-                if (mask == 0)
+                if (K._mp == null || K._mp.gameObject == null)
                 {
                     return null;
                 }
-                float mx = _mp.pixel2ux(sx * _mp.CLEN);
-                float my = _mp.pixel2uy(sy * _mp.CLEN);
-                Vector2 center = _mp.gameObject.transform.TransformPoint(new Vector2(mx, my));
-                Collider2D[] hits = Physics2D.OverlapCircleAll(center, GrimmSeekRange, mask);
-                if (hits == null)
+                try
                 {
-                    return null;
-                }
-                NelEnemy best = null;
-                float bestD = float.MaxValue;
-                for (int i = 0; i < hits.Length; i++)
-                {
-                    Collider2D c = hits[i];
-                    if (c == null)
+                    int mask = K.GetEnemyOverlapMask();
+                    if (mask == 0)
                     {
-                        continue;
+                        return null;
                     }
-                    NelEnemy enemy = c.GetComponentInParent<NelEnemy>();
-                    enemy = ResolveDamageTarget(enemy);
+                    float mx = K._mp.pixel2ux(sx * K._mp.CLEN);
+                    float my = K._mp.pixel2uy(sy * K._mp.CLEN);
+                    Vector2 center = K._mp.gameObject.transform.TransformPoint(new Vector2(mx, my));
+                    Collider2D[] hits = Physics2D.OverlapCircleAll(center, range, mask);
+                    if (hits == null)
+                    {
+                        return null;
+                    }
+                    NelEnemy best = null;
+                    float bestD = float.MaxValue;
+                    for (int i = 0; i < hits.Length; i++)
+                    {
+                        Collider2D c = hits[i];
+                        if (c == null)
+                        {
+                            continue;
+                        }
+                        NelEnemy enemy = K.ResolveDamageTarget(c.GetComponentInParent<NelEnemy>());
+                        if (enemy == null)
+                        {
+                            continue;
+                        }
+                        float dx = enemy.x - sx;
+                        float dy = enemy.y - sy;
+                        float d = dx * dx + dy * dy;
+                        if (d < bestD)
+                        {
+                            bestD = d;
+                            best = enemy;
+                        }
+                    }
+                    return best;
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
+            }
+
+            /// <summary>range 格内最近的魔力草，返回其格坐标。</summary>
+            private bool FindNearestGrimmWeed(float sx, float sy, float range, out float wx, out float wy)
+            {
+                wx = 0f;
+                wy = 0f;
+                if (K._mp == null || K._mp.gameObject == null)
+                {
+                    return false;
+                }
+                try
+                {
+                    int mask = K.GetAreaObjectMask();
+                    if (mask == 0)
+                    {
+                        return false;
+                    }
+                    float mx = K._mp.pixel2ux(sx * K._mp.CLEN);
+                    float my = K._mp.pixel2uy(sy * K._mp.CLEN);
+                    Vector2 center = K._mp.gameObject.transform.TransformPoint(new Vector2(mx, my));
+                    Collider2D[] hits = Physics2D.OverlapCircleAll(center, range, mask);
+                    if (hits == null)
+                    {
+                        return false;
+                    }
+                    bool found = false;
+                    float bestD = float.MaxValue;
+                    for (int i = 0; i < hits.Length; i++)
+                    {
+                        Collider2D c = hits[i];
+                        if (c == null)
+                        {
+                            continue;
+                        }
+                        M2ManaWeed weed = c.GetComponentInParent<M2ManaWeed>();
+                        if (weed == null || !K.IsManaWeedReady(weed))
+                        {
+                            // 跳过已被破坏/正在重生（未完全长成）的魔力草
+                            continue;
+                        }
+                        float wx2 = weed.mapcx;
+                        float wy2 = weed.mapcy;
+                        float dx = wx2 - sx;
+                        float dy = wy2 - sy;
+                        float d = dx * dx + dy * dy;
+                        if (d < bestD)
+                        {
+                            bestD = d;
+                            wx = wx2;
+                            wy = wy2;
+                            found = true;
+                        }
+                    }
+                    return found;
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+            }
+
+            /// <summary>火球命中一个碰撞体：魔物 / 联机仇恨代理（沿用骑士原伤害管线）。</summary>
+            public void OnGrimmFireballCollider(object token, Collider2D col, int damage,
+                HashSet<object> hits)
+            {
+                try
+                {
+                    if (col == null)
+                    {
+                        return;
+                    }
+                    NelEnemy enemy = K.ResolveDamageTarget(col.GetComponentInParent<NelEnemy>());
                     if (enemy == null)
                     {
-                        continue;
-                    }
-                    float dx = enemy.x - sx;
-                    float dy = enemy.y - sy;
-                    float d = dx * dx + dy * dy;
-                    if (d < bestD)
-                    {
-                        bestD = d;
-                        best = enemy;
-                    }
-                }
-                return best;
-            }
-            catch (Exception)
-            {
-                return null;
-            }
-        }
-
-        /// <summary>6 格半径内最近的魔力草，返回其格坐标。</summary>
-        private bool FindNearestGrimmWeed(float sx, float sy, out float wx, out float wy)
-        {
-            wx = 0f;
-            wy = 0f;
-            if (_mp == null || _mp.gameObject == null)
-            {
-                return false;
-            }
-            try
-            {
-                int mask = GetAreaObjectMask();
-                if (mask == 0)
-                {
-                    return false;
-                }
-                float mx = _mp.pixel2ux(sx * _mp.CLEN);
-                float my = _mp.pixel2uy(sy * _mp.CLEN);
-                Vector2 center = _mp.gameObject.transform.TransformPoint(new Vector2(mx, my));
-                Collider2D[] hits = Physics2D.OverlapCircleAll(center, GrimmSeekRange, mask);
-                if (hits == null)
-                {
-                    return false;
-                }
-                bool found = false;
-                float bestD = float.MaxValue;
-                for (int i = 0; i < hits.Length; i++)
-                {
-                    Collider2D c = hits[i];
-                    if (c == null)
-                    {
-                        continue;
-                    }
-                    M2ManaWeed weed = c.GetComponentInParent<M2ManaWeed>();
-                    if (weed == null || !IsManaWeedReady(weed))
-                    {
-                        // 跳过已被破坏/正在重生（未完全长成）的魔力草
-                        continue;
-                    }
-                    float wx2 = weed.mapcx;
-                    float wy2 = weed.mapcy;
-                    float dx = wx2 - sx;
-                    float dy = wy2 - sy;
-                    float d = dx * dx + dy * dy;
-                    if (d < bestD)
-                    {
-                        bestD = d;
-                        wx = wx2;
-                        wy = wy2;
-                        found = true;
-                    }
-                }
-                return found;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
-        /// <summary>攻击 0004 帧：向目标发射三枚直线火球（正中 + 顺/逆时针各 30°）。</summary>
-        private void GrimmSpawnFireballs(GrimmChild g)
-        {
-            float tx, ty;
-            if (g.AliceTarget != null && !g.AliceTarget.destructed)
-            {
-                // 爱丽丝：瞄准当前位置（攻击不造成伤害）
-                tx = g.AliceTarget.x;
-                ty = g.AliceTarget.y;
-            }
-            else if (!g.TargetIsWeed)
-            {
-                if (g.Target != null && g.Target.is_alive)
-                {
-                    tx = g.Target.x;
-                    ty = g.Target.y;
-                }
-                else
-                {
-                    // 目标已失效：朝自身面前方向射出（保底）
-                    tx = g.X + (_faceDir > 0f ? -1f : 1f);
-                    ty = g.Y - 1f;
-                }
-            }
-            else
-            {
-                tx = g.WeedTargetX;
-                ty = g.WeedTargetY;
-                if (tx == 0f && ty == 0f)
-                {
-                    tx = g.X;
-                    ty = g.Y - 1.5f;
-                }
-            }
-            float baseAng = Mathf.Atan2(ty - g.Y, tx - g.X); // 游戏 Y 向下，+角=顺时针
-            float[] offs = { 0f, GrimmFireballSpread, -GrimmFireballSpread };
-            for (int i = 0; i < offs.Length; i++)
-            {
-                float a = baseAng + offs[i];
-                _grimmFireballs.Add(new GrimmFireball
-                {
-                    X = g.X,
-                    Y = g.Y,
-                    DirX = Mathf.Cos(a),
-                    DirY = Mathf.Sin(a),
-                    Life = GrimmFireballLife,
-                    Alice = g.AliceTarget
-                });
-            }
-        }
-
-        /// <summary>火球推进：直线飞行、穿敌、破魔力草、5 秒后销毁。</summary>
-        private void UpdateGrimmFireballs(float sdt)
-        {
-            if (_grimmFireballs.Count == 0)
-            {
-                return;
-            }
-            if (_mp == null || _mp.gameObject == null)
-            {
-                return;
-            }
-            int enemyMask = GetEnemyOverlapMask();
-            int areaMask = GetAreaObjectMask();
-            for (int i = _grimmFireballs.Count - 1; i >= 0; i--)
-            {
-                GrimmFireball f = _grimmFireballs[i];
-                f.Life -= sdt;
-                if (f.Life <= 0f)
-                {
-                    _grimmFireballs.RemoveAt(i);
-                    continue;
-                }
-                float step = GrimmFireballSpeed * sdt;
-                f.X += f.DirX * step;
-                f.Y += f.DirY * step;
-                // 爱丽丝：火球到达她身边即算“命中”（不造成伤害，火球消失）
-                if (f.Alice != null && !f.Alice.destructed)
-                {
-                    float adx = f.X - f.Alice.x;
-                    float ady = f.Y - f.Alice.y;
-                    if (adx * adx + ady * ady <= GrimmFireballRadius * GrimmFireballRadius)
-                    {
-                        _grimmFireballs.RemoveAt(i);
-                        continue;
-                    }
-                }
-                float mx = _mp.pixel2ux(f.X * _mp.CLEN);
-                float my = _mp.pixel2uy(f.Y * _mp.CLEN);
-                Vector2 center = _mp.gameObject.transform.TransformPoint(new Vector2(mx, my));
-                // 敌人：穿透，每只敌人只判定一次
-                if (enemyMask != 0)
-                {
-                    Collider2D[] hits = Physics2D.OverlapCircleAll(center, GrimmFireballRadius, enemyMask);
-                    if (hits != null)
-                    {
-                        for (int j = 0; j < hits.Length; j++)
+                        M2Attackable ga = col.GetComponentInParent<M2Attackable>();
+                        if (ga != null && KnightEntity.IsRemoteProxy(ga) && K.IsPvpAggroed(ga) &&
+                            hits.Add(ga))
                         {
-                            Collider2D c = hits[j];
-                            if (c == null)
-                            {
-                                continue;
-                            }
-                            NelEnemy enemy = c.GetComponentInParent<NelEnemy>();
-                            enemy = ResolveDamageTarget(enemy);
-                            if (enemy == null)
-                            {
-                                M2Attackable ga = c.GetComponentInParent<M2Attackable>();
-                                if (ga != null && IsRemoteProxy(ga) && IsPvpAggroed(ga) &&
-                                    f.Hits.Add(ga))
-                                {
-                                    ApplyKnightAreaDamage(ga, GrimmFireballDamage);
-                                }
-                                continue;
-                            }
-                            if (!f.Hits.Add(enemy))
-                            {
-                                continue;
-                            }
-                            ApplyKnightAreaDamage(enemy, GrimmFireballDamage);
+                            K.ApplyKnightAreaDamage(ga, damage);
+                        }
+                        return;
+                    }
+                    if (!hits.Add(enemy))
+                    {
+                        return;
+                    }
+                    K.ApplyKnightAreaDamage(enemy, damage);
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            /// <summary>火球附加处理：命中爱丽丝即消失（不造成伤害）、破坏魔力草回魂。</summary>
+            public void OnGrimmFireballTick(object token, float x, float y, float radius,
+                HashSet<object> hits, ref bool destroy)
+            {
+                try
+                {
+                    AlicePVV200 alice = token as AlicePVV200;
+                    if (alice != null && !alice.destructed)
+                    {
+                        float adx = x - alice.x;
+                        float ady = y - alice.y;
+                        if (adx * adx + ady * ady <= radius * radius)
+                        {
+                            destroy = true;
+                            return;
                         }
                     }
+                    if (K.GetAreaObjectMask() != 0)
+                    {
+                        K.BreakManaWeeds(hits, x, y, radius, radius);
+                    }
                 }
-                // 魔力草：破坏并给小骑士回魂（复用普攻破草逻辑）
-                if (areaMask != 0)
+                catch (Exception)
                 {
-                    BreakManaWeeds(f.Hits, f.X, f.Y, GrimmFireballRadius, GrimmFireballRadius);
                 }
             }
         }
@@ -9447,58 +9203,6 @@ namespace KnightInCradle
         private MeshDrawer _shieldMesh;
         private M2RenderTicket _shieldTicket;
         private Material _shieldMat;
-        // ---- 护符39 格林之子：跟随小骑士的小格林 ----
-        private const float GrimmSitSleepTime = 2f;    // 坐椅超过该秒数后入睡
-        private const float GrimmTeleportRange = 6f;   // 离骑士超过该距离触发传送
-        private const float GrimmScale = 0.22f;        // 渲染缩放（相对贴图原始像素）
-        private const float GrimmHoverOffX = 0.8f;     // 待机悬浮相对骑士 X 偏移（格）
-        private const float GrimmHoverOffY = -1.1f;    // 待机悬浮相对骑士 Y 偏移（格，向上为负）
-        private const float GrimmFollowLag = 0.9f;     // 正常跟随速度比例（略低于骑士）
-        private const float GrimmMaxSpeedRatio = 2f;   // 最大速度相对骑士速度的倍数（追赶用）
-        private const float GrimmRespawnDelay = 3f;    // 过图后重生等待（秒，同编织者之歌）
-        private const float GrimmSeekRange = 6f;       // 攻击范围半径（格，以自身为中心）
-        private const float GrimmAttackInterval = 2f;  // 攻击间隔（秒）
-        private const float GrimmFireballSpeed = 16f;  // 火球速度（格/秒）
-        private const float GrimmFireballRadius = 0.25f; // 火球半径（格）
-        private const float GrimmFireballLife = 5f;    // 火球寿命（秒）
-        private const int GrimmFireballDamage = 30;    // 火球伤害
-        private const float GrimmFireballSpread = 30f * Mathf.Deg2Rad; // 副火球偏转角（±30°）
-        private const float GrimmFireballScale = 0.3f; // 火球渲染缩放
-        private const float GrimmShootFireTime = 4f / 12f; // 第 0004 帧时刻（12fps）
-        private sealed class GrimmChild
-        {
-            public float X, Y;         // 格坐标
-            public int Phase;          // 0=出现 1=活跃 2=传送 3=睡眠 4=苏醒
-            public float AnimTime;     // 动画时间
-            public float AttackCd;     // 攻击冷却
-            public int SleepStage;     // 0=降落中 1=播睡眠动画 2=保持末帧
-            public float SleepX;       // 落点 X
-            public float SleepGroundY; // 落点 Y（脚底贴地）
-            public M2Attackable Target; // 攻击目标（敌人或已仇恨的远端玩家）
-            public bool TargetIsWeed;  // 目标是否为魔力草
-            public float WeedTargetX, WeedTargetY; // 魔力草目标位置
-            public AlicePVV200 AliceTarget; // 攻击目标（爱丽丝，不造成伤害）
-            public bool Fired;         // 本次攻击是否已发射火球
-        }
-        private sealed class GrimmFireball
-        {
-            public float X, Y;
-            public float DirX, DirY;
-            public float Life;
-            public AlicePVV200 Alice; // 爱丽丝目标（火球命中即消失，不造成伤害）
-            public readonly HashSet<object> Hits = new HashSet<object>(); // 敌人/魔力草去重
-        }
-        private GrimmChild _grimm;
-        private readonly List<GrimmFireball> _grimmFireballs = new List<GrimmFireball>();
-        private float _grimmRespawnDelay;
-        private float _grimmSitTimer;
-        private int _grimmSoundState;  // 0=静音 1=待机循环 2=攻击音
-        private MeshDrawer _grimmMesh;
-        private M2RenderTicket _grimmTicket;
-        private Material _grimmMat;
-        private MeshDrawer _grimmFireballMesh;
-        private M2RenderTicket _grimmFireballTicket;
-        private Material _grimmFireballMat;
         private sealed class UterusHatchling
         {
             public float X;
@@ -11219,15 +10923,14 @@ namespace KnightInCradle
                 _sporeClouds.Clear(); // 过图：旧地图坐标的孢子云一并清除
                 _weaverlings.Clear(); // 过图：小编织者一并清除（随后重生）
                 _weaverThreads.Clear();
-                _grimm = null; // 过图：小格林一并清除（随后重生）
-                _grimmFireballs.Clear(); // 过图：旧地图坐标的火球一并清除
                 // 走路过图：等骑士在新地图稳定 3 秒后再生成小编织者，
                 // 避免在强制位移/坐标不稳定期间重生导致丢失（传送保持立即生成）。
                 if (!_fastTravelInProgress)
                 {
                     _weaverRespawnDelay = WeaverRespawnDelay;
-                    _grimmRespawnDelay = GrimmRespawnDelay;
                 }
+                // 护符39 格林之子：过图后小格林与旧地图坐标的火球一并清除（同上，传送保持立即生成）
+                ResetGrimmOnMapChange(!_fastTravelInProgress);
                 // 读档/新游戏：直接把小骑士对齐到诺艾尔（跳过渐进跟随）。
                 // 否则骑士会残留在旧地图坐标上（新地图里不可见/卡住），需要按两下 T 才能恢复。
                 if (JustLoadedSave)
@@ -14311,22 +14014,6 @@ namespace KnightInCradle
             _shieldMesh.activate("knight_dreamshield", _shieldMat, false, MTRX.ColWhite, null);
             _shieldTicket = _mp.MovRenderer.assignDrawable(
                 M2Mover.DRAW_ORDER.PR1, null, KnightPrepareDreamShieldMesh, _shieldMesh, null, null);
-            // 护符39 格林之子：小格林（骑士身前层 PR1）
-            _grimmMesh = new MeshDrawer(null, 4 * 32, 6 * 32);
-            _grimmMesh.draw_gl_only = true;
-            _grimmMat = MTRX.newMtr(MTRX.ShaderGDT);
-            _grimmMat.EnableKeyword("NO_PIXELSNAP");
-            _grimmMesh.activate("knight_grimm", _grimmMat, false, MTRX.ColWhite, null);
-            _grimmTicket = _mp.MovRenderer.assignDrawable(
-                M2Mover.DRAW_ORDER.PR1, null, KnightPrepareGrimmMesh, _grimmMesh, null, null);
-            // 小格林火球：独立网格（MeshDrawer 一个网格只能绑一张贴图，不能与小格林同网格）
-            _grimmFireballMesh = new MeshDrawer(null, 4 * 64, 6 * 64);
-            _grimmFireballMesh.draw_gl_only = true;
-            _grimmFireballMat = MTRX.newMtr(MTRX.ShaderGDT);
-            _grimmFireballMat.EnableKeyword("NO_PIXELSNAP");
-            _grimmFireballMesh.activate("knight_grimm_fireball", _grimmFireballMat, false, MTRX.ColWhite, null);
-            _grimmFireballTicket = _mp.MovRenderer.assignDrawable(
-                M2Mover.DRAW_ORDER.PR1, null, KnightPrepareGrimmFireballMesh, _grimmFireballMesh, null, null);
             // 发光子宫：幼体（骑士身前层 PR1）
             _uterusMesh = new MeshDrawer(null, 4 * 32, 6 * 32);
             _uterusMesh.draw_gl_only = true;
@@ -15307,72 +14994,6 @@ namespace KnightInCradle
             _shieldTicket = null;
             _shieldMesh = null;
             _shieldMat = null;
-            if (_grimmTicket != null && _mp != null)
-            {
-                try
-                {
-                    _mp.MovRenderer.deassignDrawable(_grimmTicket, -1);
-                }
-                catch
-                {
-                }
-            }
-            if (_grimmMesh != null)
-            {
-                try
-                {
-                    _grimmMesh.destruct();
-                }
-                catch
-                {
-                }
-            }
-            if (_grimmMat != null)
-            {
-                try
-                {
-                    IN.DestroyOne(_grimmMat);
-                }
-                catch
-                {
-                }
-            }
-            _grimmTicket = null;
-            _grimmMesh = null;
-            _grimmMat = null;
-            if (_grimmFireballTicket != null && _mp != null)
-            {
-                try
-                {
-                    _mp.MovRenderer.deassignDrawable(_grimmFireballTicket, -1);
-                }
-                catch
-                {
-                }
-            }
-            if (_grimmFireballMesh != null)
-            {
-                try
-                {
-                    _grimmFireballMesh.destruct();
-                }
-                catch
-                {
-                }
-            }
-            if (_grimmFireballMat != null)
-            {
-                try
-                {
-                    IN.DestroyOne(_grimmFireballMat);
-                }
-                catch
-                {
-                }
-            }
-            _grimmFireballTicket = null;
-            _grimmFireballMesh = null;
-            _grimmFireballMat = null;
             if (_uterusTicket != null && _mp != null)
             {
                 try
@@ -18740,154 +18361,6 @@ namespace KnightInCradle
         }
 
         /// <summary>
-        /// 小格林渲染：锚定骑士中心，按状态选择动画帧（出现/待机/飞行/睡眠/苏醒/传送），
-        /// 以自身坐标相对骑士的像素偏移绘制，骑士身前层 PR1。
-        /// </summary>
-        private bool KnightPrepareGrimmMesh(Camera Cam, M2RenderTicket Tk, bool need_redraw, int draw_id,
-            out MeshDrawer MdOut, ref bool color_one_overwrite)
-        {
-            MdOut = null;
-            if (_mp == null || _grimmMesh == null)
-            {
-                return false;
-            }
-            if (draw_id != 0)
-            {
-                return false;
-            }
-            _grimmMesh.clearSimple();
-            if (!CharmEffects.IsEquipped(CharmEffects.GrimmId) || _grimm == null)
-            {
-                MdOut = _grimmMesh;
-                return true;
-            }
-            GrimmChild g = _grimm;
-            string sprite = null;
-            if (g.Phase == 0)
-            {
-                sprite = GrimmFrame("GrimmAppear", g.AnimTime, false);
-            }
-            else if (g.Phase == 1)
-            {
-                bool moving = Mathf.Abs(Vx) > 0.05f || !Grounded;
-                sprite = GrimmFrame(moving ? "GrimmFly" : "GrimmIdle", g.AnimTime, true);
-            }
-            else if (g.Phase == 2)
-            {
-                sprite = GrimmFrame("GrimmTeleport", g.AnimTime, false);
-            }
-            else if (g.Phase == 3)
-            {
-                if (g.SleepStage == 0)
-                {
-                    sprite = GrimmFrame("GrimmIdle", g.AnimTime, true); // 降落中仍待机
-                }
-                else if (g.SleepStage == 1)
-                {
-                    sprite = GrimmFrame("GrimmSleep", g.AnimTime, false);
-                }
-                else
-                {
-                    // 保持睡眠末帧（sleep0002）：直接取剪辑最后一帧，
-                    // 不能用超大时间走 GrimmFrame（float→int 溢出会取到第 0 帧）
-                    if (_clips.TryGetValue("GrimmSleep", out ClipData sc) && sc.frames.Length > 0)
-                    {
-                        sprite = sc.frames[sc.frames.Length - 1];
-                    }
-                }
-            }
-            else if (g.Phase == 4)
-            {
-                sprite = GrimmFrame("GrimmWake", g.AnimTime, false);
-            }
-            else if (g.Phase == 5)
-            {
-                sprite = GrimmFrame("GrimmShoot", g.AnimTime, false);
-            }
-            if (sprite == null || !_textures.TryGetValue(sprite, out Texture2D tex))
-            {
-                MdOut = _grimmMesh;
-                return true;
-            }
-            float mx = _mp.pixel2ux(X * _mp.CLEN);
-            float my = _mp.pixel2uy(Y * _mp.CLEN);
-            Tk.Matrix = _mp.gameObject.transform.localToWorldMatrix *
-                        Matrix4x4.Translate(new Vector3(mx, my, 0f));
-            float dxm = (g.X - X) * _mp.CLEN;
-            float dym = -(g.Y - Y) * _mp.CLEN;
-            float w = tex.width * GrimmScale;
-            float h = tex.height * GrimmScale;
-            _grimmMesh.Col = MTRX.ColWhite;
-            _grimmMesh.initForImgAndTexture(tex);
-            _grimmMesh.uv_top = 0f;
-            _grimmMesh.uv_height = 1f;
-            // 面朝约定：_faceDir<0=面朝右（翻转），_faceDir>0=面朝左（保持原图，素材默认朝左）
-            if (_faceDir < 0f)
-            {
-                _grimmMesh.uv_left = 1f;
-                _grimmMesh.uv_width = -1f;
-            }
-            else
-            {
-                _grimmMesh.uv_left = 0f;
-                _grimmMesh.uv_width = 1f;
-            }
-            _grimmMesh.Rect(dxm, dym, w, h, false); // Rect 的 (x,y) 是中心
-            MdOut = _grimmMesh;
-            return true;
-        }
-
-        /// <summary>小格林火球渲染：独立网格（循环播 grimm_fireball0000~0007，16fps）。</summary>
-        private bool KnightPrepareGrimmFireballMesh(Camera Cam, M2RenderTicket Tk, bool need_redraw, int draw_id,
-            out MeshDrawer MdOut, ref bool color_one_overwrite)
-        {
-            MdOut = null;
-            if (_mp == null || _grimmFireballMesh == null)
-            {
-                return false;
-            }
-            if (draw_id != 0)
-            {
-                return false;
-            }
-            _grimmFireballMesh.clearSimple();
-            if (!CharmEffects.IsEquipped(CharmEffects.GrimmId) || _grimmFireballs.Count == 0 ||
-                !_clips.TryGetValue("GrimmFireball", out ClipData fbClip) || fbClip.frames.Length == 0)
-            {
-                MdOut = _grimmFireballMesh;
-                return true;
-            }
-            float mx = _mp.pixel2ux(X * _mp.CLEN);
-            float my = _mp.pixel2uy(Y * _mp.CLEN);
-            Tk.Matrix = _mp.gameObject.transform.localToWorldMatrix *
-                        Matrix4x4.Translate(new Vector3(mx, my, 0f));
-            _grimmFireballMesh.Col = MTRX.ColWhite;
-            for (int fi = 0; fi < _grimmFireballs.Count; fi++)
-            {
-                GrimmFireball f = _grimmFireballs[fi];
-                // 用已存活时间正向取帧（Life 是倒计时，直接用会倒放）
-                int fidx = ((int)((GrimmFireballLife - f.Life) * fbClip.fps)) % fbClip.frames.Length;
-                if (fidx < 0) fidx = 0;
-                if (!_textures.TryGetValue(fbClip.frames[fidx], out Texture2D ftex))
-                {
-                    continue;
-                }
-                _grimmFireballMesh.initForImgAndTexture(ftex);
-                _grimmFireballMesh.uv_top = 0f;
-                _grimmFireballMesh.uv_height = 1f;
-                _grimmFireballMesh.uv_left = 0f;
-                _grimmFireballMesh.uv_width = 1f;
-                float fdx = (f.X - X) * _mp.CLEN;
-                float fdy = -(f.Y - Y) * _mp.CLEN;
-                float fbw = ftex.width * GrimmFireballScale;
-                float fbh = ftex.height * GrimmFireballScale;
-                _grimmFireballMesh.Rect(fdx, fdy, fbw, fbh, false);
-            }
-            MdOut = _grimmFireballMesh;
-            return true;
-        }
-
-        /// <summary>
         /// 蜕变挽歌调试：绿色线框标出每道剑气的判定箱（矩阵锚定小骑士原点）。
         /// </summary>
         private bool KnightPrepareElegyBladeDebugMesh(Camera Cam, M2RenderTicket Tk, bool need_redraw, int draw_id,
@@ -21180,8 +20653,10 @@ namespace KnightInCradle
                 LoadWeaverAssets();
                 // 护符38 梦之盾：盾牌贴图
                 LoadDreamShieldAssets();
-                // 护符39 格林之子：小格林出现/待机/飞行/睡眠/传送动画
-                LoadGrimmAssets();
+                // 护符39 格林之子：素材由共享实现（KnightInCradle.Grimm.GrimmAssets）按需加载，
+                // 这里只保留小格林音效注册；无忧旋律音效也一并在此注册。
+                DashAudio.LoadGrimmSounds();
+                DashAudio.LoadTuneSound();
                 // 凝聚三阶段剪辑：发动（0000~0002，0.27s）/ 回血（0003~0006，0.82s）
                 BuildFocusPhaseClips();
                 // 挑衅（V 键）：开场 0000~0008 → 循环 3 次 0009~0010 → 收尾 0010~0017
@@ -22102,122 +21577,6 @@ namespace KnightInCradle
                 tex.filterMode = FilterMode.Point;
                 tex.wrapMode = TextureWrapMode.Clamp;
                 _textures["dreamshield"] = tex;
-            }
-            catch (Exception)
-            {
-            }
-        }
-
-        /// <summary>护符39 格林之子素材：读取 sheets/grimm 下的 Grimmbat_* 帧并注册剪辑。</summary>
-        private void LoadGrimmAssets()
-        {
-            try
-            {
-                string dir = Path.Combine(Paths.PluginPath, "KnightInCradle", "assets", "hk",
-                    "sheets", "grimm");
-                if (!Directory.Exists(dir))
-                {
-                    return;
-                }
-                var wanted = new Dictionary<string, string[]>
-                {
-                    ["GrimmAppear"] = new[] { "Grimmbat_turn0000", "Grimmbat_turn0001" },
-                    ["GrimmIdle"] = new[]
-                    {
-                        "Grimmbat_idle0000", "Grimmbat_idle0001", "Grimmbat_idle0002",
-                        "Grimmbat_idle0003", "Grimmbat_idle0004", "Grimmbat_idle0005"
-                    },
-                    ["GrimmFly"] = new[]
-                    {
-                        "Grimmbat_fly_full0000", "Grimmbat_fly_full0001", "Grimmbat_fly_full0002",
-                        "Grimmbat_fly_full0003", "Grimmbat_fly_full0004", "Grimmbat_fly_full0005"
-                    },
-                    ["GrimmSleep"] = new[]
-                    {
-                        "Grimmbat_sleep0000", "Grimmbat_sleep0001", "Grimmbat_sleep0002"
-                    },
-                    ["GrimmWake"] = new[]
-                    {
-                        "Grimmbat_sleep0002", "Grimmbat_sleep0001", "Grimmbat_sleep0000"
-                    },
-                    ["GrimmTeleport"] = new[]
-                    {
-                        "Grimmbat_teleport0000", "Grimmbat_teleport0001", "Grimmbat_teleport0002",
-                        "Grimmbat_teleport0003", "Grimmbat_teleport0004", "Grimmbat_teleport0005",
-                        "Grimmbat_teleport0006", "Grimmbat_teleport0007"
-                    },
-                    ["GrimmShoot"] = new[]
-                    {
-                        "Grimmbat_shoot0000", "Grimmbat_shoot0001", "Grimmbat_shoot0002",
-                        "Grimmbat_shoot0003", "Grimmbat_shoot0004", "Grimmbat_shoot0005"
-                    },
-                    ["GrimmFireball"] = new[]
-                    {
-                        "grimm_fireball0000", "grimm_fireball0001", "grimm_fireball0002",
-                        "grimm_fireball0003", "grimm_fireball0004", "grimm_fireball0005",
-                        "grimm_fireball0006", "grimm_fireball0007"
-                    }
-                };
-                var fps = new Dictionary<string, float>
-                {
-                    ["GrimmAppear"] = 20f,
-                    ["GrimmIdle"] = 12f,
-                    ["GrimmFly"] = 12f,
-                    ["GrimmSleep"] = 12f,
-                    ["GrimmWake"] = 12f,
-                    ["GrimmTeleport"] = 20f,
-                    ["GrimmShoot"] = 12f,
-                    ["GrimmFireball"] = 16f
-                };
-                foreach (var kv in wanted)
-                {
-                    foreach (string n in kv.Value)
-                    {
-                        if (_textures.ContainsKey(n))
-                        {
-                            continue;
-                        }
-                        string png = Path.Combine(dir, n + ".png");
-                        if (!File.Exists(png))
-                        {
-                            continue;
-                        }
-                        var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
-                        if (!ImageConversion.LoadImage(tex, File.ReadAllBytes(png)))
-                        {
-                            continue;
-                        }
-                        tex.filterMode = FilterMode.Point;
-                        tex.wrapMode = TextureWrapMode.Clamp;
-                        _textures[n] = tex;
-                    }
-                }
-                foreach (var kv in wanted)
-                {
-                    var frames = new List<string>();
-                    foreach (string n in kv.Value)
-                    {
-                        if (_textures.ContainsKey(n))
-                        {
-                            frames.Add(n);
-                        }
-                    }
-                    if (frames.Count == 0)
-                    {
-                        continue;
-                    }
-                    _clips[kv.Key] = new ClipData
-                    {
-                        fps = fps[kv.Key],
-                        wrapMode = 0,
-                        loopStart = 0,
-                        frames = frames.ToArray()
-                    };
-                }
-                // 小格林音效（外部 wav）
-                DashAudio.LoadGrimmSounds();
-                // 无忧旋律音效（外部 wav）
-                DashAudio.LoadTuneSound();
             }
             catch (Exception)
             {

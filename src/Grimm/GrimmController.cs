@@ -18,8 +18,6 @@ namespace KnightInCradle.Grimm
         public const float SitSleepTime = 2f;
         public const float TeleportRange = 6f;
         public const float Scale = 0.22f;
-        public const float HoverOffX = 1.2f;          // 诺艾尔口径：后方 1.2 格（骑士侧由宿主覆盖）
-        public const float HoverOffY = -1.1f;
         public const float FollowLag = 0.9f;
         public const float MaxSpeedRatio = 2f;
         public const float RespawnDelayTime = 3f;
@@ -42,7 +40,10 @@ namespace KnightInCradle.Grimm
             public int SleepStage;
             public float SleepX;
             public float SleepGroundY;
-            public NelEnemy Target;
+            public float TargetX;
+            public float TargetY;
+            public bool HasPoint;
+            public object Token;
             public bool Fired;
         }
 
@@ -51,6 +52,7 @@ namespace KnightInCradle.Grimm
             public float X, Y;
             public float DirX, DirY;
             public float Life;
+            public object Token;
             public readonly HashSet<object> Hits = new HashSet<object>();
         }
 
@@ -74,6 +76,22 @@ namespace KnightInCradle.Grimm
         public GrimmController(IGrimmHost host)
         {
             _host = host;
+        }
+
+        /// <summary>宿主换图/换模式时调用：清掉小格林与旧地图坐标的火球，并按过图重生延迟重新出现。</summary>
+        public void NotifyMapChanged(bool respawnDelay = true)
+        {
+            try
+            {
+                StopIdleLoop();
+                _child = null;
+                _fireballs.Clear();
+                _sitTimer = 0f;
+                _respawnDelay = respawnDelay ? RespawnDelayTime : 0f;
+            }
+            catch (Exception)
+            {
+            }
         }
 
         /// <summary>宿主还没准备好（角色死亡/过图中）时返回 false，共享实现会收尾。</summary>
@@ -110,9 +128,10 @@ namespace KnightInCradle.Grimm
                     _child = new Child
                     {
                         X = HoverX(),
-                        Y = _host.Y + HoverOffY,
+                        Y = _host.Y + _host.HoverOffY,
                         Phase = 0,
-                        AnimTime = 0f
+                        AnimTime = 0f,
+                        AttackCd = 0f
                     };
                 }
                 Child g = _child;
@@ -178,7 +197,7 @@ namespace KnightInCradle.Grimm
                         }
                         return;
                     case 2:
-                        if (g.AnimTime >= 0.4f)
+                        if (g.AnimTime >= GrimmAssets.Duration(GrimmAssets.ClipTeleport))
                         {
                             _child = null;
                         }
@@ -196,12 +215,13 @@ namespace KnightInCradle.Grimm
                             g.Fired = true;
                             SpawnFireballs(g);
                         }
-                        if (g.AnimTime >= GrimmAssets.Duration(GrimmAssets.ClipIdle) * 1.5f + ShootFireTime)
+                        if (g.AnimTime >= GrimmAssets.Duration(GrimmAssets.ClipShoot))
                         {
                             g.Phase = 1;
                             g.AnimTime = 0f;
                             g.AttackCd = AttackInterval;
-                            g.Target = null;
+                            g.HasPoint = false;
+                            g.Token = null;
                             DashAudio.PlayGrimmIdleLoop();
                             _soundState = 1;
                         }
@@ -210,7 +230,7 @@ namespace KnightInCradle.Grimm
                 // Phase 1：跟随 + 索敌
                 g.AttackCd -= dt;
                 float hoverX = HoverX();
-                float hoverY = _host.Y + HoverOffY;
+                float hoverY = _host.Y + _host.HoverOffY;
                 bool moving = Mathf.Abs(_host.Vx) > 0.05f || !_host.Grounded;
                 float tdx = hoverX - g.X;
                 float tdy = hoverY - g.Y;
@@ -267,77 +287,54 @@ namespace KnightInCradle.Grimm
 
         private float HoverX()
         {
-            return _host.X + (_host.FacingLeft ? HoverOffX : -HoverOffX);
+            return _host.X + (_host.FacingLeft ? _host.HoverOffX : -_host.HoverOffX);
         }
 
+        /// <summary>坐椅睡眠落地 Y：宿主给的基准减去睡眠帧半高，使贴图底边贴地。</summary>
         private float SleepGroundY()
         {
-            return _host.FootY + 0.5f;
+            float groundY = _host.SleepGroundBaseY;
+            try
+            {
+                Map2d mp = _host.Map;
+                Texture2D tex = GrimmAssets.LastFrameTexture(GrimmAssets.ClipSleep);
+                if (mp != null && tex != null && mp.CLEN > 0f)
+                {
+                    groundY -= tex.height * Scale / (2f * mp.CLEN);
+                }
+            }
+            catch (Exception)
+            {
+            }
+            return groundY;
         }
 
         private bool FindTarget(Child g)
         {
-            NelEnemy enemy = FindNearestEnemy(g.X, g.Y);
-            if (enemy == null)
+            float tx;
+            float ty;
+            object token;
+            if (_host.TryAcquireTarget(g.X, g.Y, SeekRange, out tx, out ty, out token))
             {
-                return false;
+                g.TargetX = tx;
+                g.TargetY = ty;
+                g.Token = token;
+                g.HasPoint = true;
+                return true;
             }
-            g.Target = enemy;
-            return true;
-        }
-
-        private NelEnemy FindNearestEnemy(float sx, float sy)
-        {
-            try
-            {
-                Map2d mp = _host.Map;
-                int mask = _host.EnemyMask;
-                if (mp == null || mp.gameObject == null || mask == 0)
-                {
-                    return null;
-                }
-                Vector2 center = mp.gameObject.transform.TransformPoint(
-                    new Vector2(mp.pixel2ux(sx * mp.CLEN), mp.pixel2uy(sy * mp.CLEN)));
-                Collider2D[] hits = Physics2D.OverlapCircleAll(center, SeekRange, mask);
-                NelEnemy best = null;
-                float bestD = float.MaxValue;
-                for (int i = 0; i < hits.Length; i++)
-                {
-                    Collider2D c = hits[i];
-                    if (c == null)
-                    {
-                        continue;
-                    }
-                    NelEnemy enemy = c.GetComponentInParent<NelEnemy>();
-                    if (enemy == null || !enemy.is_alive)
-                    {
-                        continue;
-                    }
-                    float dx = enemy.x - sx;
-                    float dy = enemy.y - sy;
-                    float d = dx * dx + dy * dy;
-                    if (d < bestD)
-                    {
-                        bestD = d;
-                        best = enemy;
-                    }
-                }
-                return best;
-            }
-            catch (Exception)
-            {
-                return null;
-            }
+            g.HasPoint = false;
+            g.Token = null;
+            return false;
         }
 
         private void SpawnFireballs(Child g)
         {
             float tx;
             float ty;
-            if (g.Target != null && g.Target.is_alive)
+            if (g.HasPoint)
             {
-                tx = g.Target.x;
-                ty = g.Target.y;
+                tx = g.TargetX;
+                ty = g.TargetY;
             }
             else
             {
@@ -355,7 +352,8 @@ namespace KnightInCradle.Grimm
                     Y = g.Y,
                     DirX = Mathf.Cos(a),
                     DirY = Mathf.Sin(a),
-                    Life = FireballLife
+                    Life = FireballLife,
+                    Token = g.Token
                 });
             }
         }
@@ -376,6 +374,18 @@ namespace KnightInCradle.Grimm
                 fb.Y += fb.DirY * FireballSpeed * dt;
                 fb.Life -= dt;
                 bool remove = fb.Life <= 0f;
+                if (!remove)
+                {
+                    try
+                    {
+                        bool destroy = false;
+                        _host.OnGrimmFireballTick(fb.Token, fb.X, fb.Y, FireballRadius, fb.Hits, ref destroy);
+                        remove = destroy;
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
                 if (!remove && mp != null && mp.gameObject != null && mask != 0)
                 {
                     Vector2 center = mp.gameObject.transform.TransformPoint(
@@ -388,14 +398,9 @@ namespace KnightInCradle.Grimm
                         {
                             continue;
                         }
-                        NelEnemy enemy = c.GetComponentInParent<NelEnemy>();
-                        if (enemy == null || !enemy.is_alive || !fb.Hits.Add(enemy))
-                        {
-                            continue;
-                        }
                         try
                         {
-                            _host.ApplyGrimmFireballDamage(enemy, FireballDamage);
+                            _host.OnGrimmFireballCollider(fb.Token, c, FireballDamage, fb.Hits);
                         }
                         catch (Exception)
                         {
@@ -416,6 +421,14 @@ namespace KnightInCradle.Grimm
             {
                 return;
             }
+            if (_map != null && _map != mp)
+            {
+                // 换图：小格林与旧地图坐标的火球一并清除（重生延迟由宿主通过 NotifyMapChanged 决定）
+                StopIdleLoop();
+                _child = null;
+                _fireballs.Clear();
+                _sitTimer = 0f;
+            }
             Release();
             _map = mp;
             _mapRevision = _host.MapRevision;
@@ -427,7 +440,8 @@ namespace KnightInCradle.Grimm
             if (mp.MovRenderer != null)
             {
                 _ticket = mp.MovRenderer.assignDrawable(M2Mover.DRAW_ORDER.PR1, null, PrepareMesh, _mesh, null, null);
-                _fbMesh = new MeshDrawer(null, 4 * 8, 6 * 8);
+                // 火球可能同时存在多轮（每 2 秒一轮三发、寿命 5 秒），容量放宽
+                _fbMesh = new MeshDrawer(null, 4 * 32, 6 * 32);
                 _fbMesh.draw_gl_only = true;
                 _fbMat = MTRX.newMtr(MTRX.ShaderGDT);
                 _fbMat.EnableKeyword("NO_PIXELSNAP");
@@ -500,7 +514,7 @@ namespace KnightInCradle.Grimm
                     sprite = GrimmAssets.Frame(GrimmAssets.ClipAppear, g.AnimTime, false);
                     break;
                 case 2:
-                    sprite = GrimmAssets.Frame(GrimmAssets.ClipIdle, g.AnimTime, true);
+                    sprite = GrimmAssets.Frame(GrimmAssets.ClipTeleport, g.AnimTime, false);
                     break;
                 case 3:
                     sprite = g.SleepStage >= 1
@@ -512,8 +526,8 @@ namespace KnightInCradle.Grimm
                     break;
                 default:
                     bool moving = Mathf.Abs(g.X - _host.X) > 0.35f ||
-                                  Mathf.Abs(g.Y - (_host.Y + HoverOffY)) > 0.35f;
-                    sprite = GrimmAssets.Frame(g.Phase == 5 ? GrimmAssets.ClipIdle
+                                  Mathf.Abs(g.Y - (_host.Y + _host.HoverOffY)) > 0.35f;
+                    sprite = GrimmAssets.Frame(g.Phase == 5 ? GrimmAssets.ClipShoot
                         : (moving ? GrimmAssets.ClipFly : GrimmAssets.ClipIdle), g.AnimTime, true);
                     break;
             }
