@@ -74,6 +74,8 @@ namespace KnightInCradle.Grimm
         private Material _fbMat;
         private M2RenderTicket _fbTicket;
         private Map2d _map;
+        /// <summary>票据绑定时所属的渲染容器：战斗/子地图重建容器后需要重绑。</summary>
+        private M2MovRenderContainer _rendererSeen;
 
         public GrimmController(IGrimmHost host)
         {
@@ -419,7 +421,16 @@ namespace KnightInCradle.Grimm
         private void Ensure()
         {
             Map2d mp = _host.Map;
-            if (mp == null || (_ticket != null && _map == mp && _mapRevision == _host.MapRevision))
+            if (mp == null)
+            {
+                return;
+            }
+            M2MovRenderContainer cur = mp.MovRenderer;
+            // 票据还活着（没被渲染容器回收）+ 地图/容器都没换 → 不用重建
+            bool alive = _ticket != null && _fbTicket != null && _mesh != null && _fbMesh != null &&
+                         _mesh.draw_gl_only && _fbMesh.draw_gl_only;
+            if (alive && _map == mp && _mapRevision == _host.MapRevision &&
+                ReferenceEquals(cur, _rendererSeen))
             {
                 return;
             }
@@ -433,6 +444,7 @@ namespace KnightInCradle.Grimm
             }
             Release();
             _map = mp;
+            _rendererSeen = cur;
             _mapRevision = _host.MapRevision;
             _mesh = new MeshDrawer(null, 4, 6);
             _mesh.draw_gl_only = true;

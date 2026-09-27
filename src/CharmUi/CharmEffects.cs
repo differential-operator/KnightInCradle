@@ -1111,6 +1111,68 @@ namespace KnightInCradle.CharmUi
         }
 
         /// <summary>诺艾尔侧"找敌人"用的物理层掩码（蜕变挽歌剑气 / 苦痛荆棘共用）。</summary>
+        // ========== 渲染票据存活检查（战场地图重建 / 子地图换容器时的自愈） ==========
+        /// <summary>
+        /// 票据是否还能画。渲染容器回收或重建（`M2MovRenderContainer.clearCameraComponent`、
+        /// 战场/子地图重新 `initS`）时会给票据调 `releaseFromGlRendering()`，把 mesh 的
+        /// `draw_gl_only` 置回 false —— 此时旧票据已经不再被绘制，必须重建，
+        /// 否则诺艾尔那些"带额外渲染"的护符（梦之盾、防御者纹章等）会在战斗里集体消失。
+        /// </summary>
+        private static bool TicketUsable(M2RenderTicket tk, MeshDrawer md)
+        {
+            return tk != null && md != null && md.draw_gl_only;
+        }
+
+        /// <summary>记录上一次看到的渲染容器；换容器说明旧票据全部作废。</summary>
+        private static M2MovRenderContainer _noelTicketRendererSeen;
+
+        /// <summary>
+        /// 每帧一次（诺艾尔模式）：渲染容器换代（同一张地图重建、或换成子地图容器）时
+        /// 作废所有诺艾尔护符票据，交给各自的 Ensure 在下一帧重建。返回是否发生了作废。
+        /// </summary>
+        public static bool ValidateNoelTicketRenderer(Map2d mp)
+        {
+            try
+            {
+                M2MovRenderContainer cur = mp != null ? mp.MovRenderer : null;
+                if (cur == null || ReferenceEquals(cur, _noelTicketRendererSeen))
+                {
+                    return false;
+                }
+                bool first = _noelTicketRendererSeen == null;
+                _noelTicketRendererSeen = cur;
+                if (first)
+                {
+                    return false;
+                }
+                InvalidateNoelCharmTickets();
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>把所有诺艾尔护符票据标记为"待重建"（把各自记录的地图清空即可，Ensure 里会重新建）。</summary>
+        private static void InvalidateNoelCharmTickets()
+        {
+            _noelElegyMap = null;
+            _noelShellMap = null;
+            _noelShelterMap = null;
+            _noelSpikeMap = null;
+            _noelFlukeMap = null;
+            _noelShieldMap = null;
+            _nmCircleMap = null;
+            _noelWeaverTicketMap = null;
+            _noelLongNailArcMap = null;
+            _heavyFocusAuraMap = null;
+            _noelChargeAuraMap = null;
+            _shadowDashBurstMap = null;
+            _noelShadowMap = null;
+            _noelFuryGlowMap = null;
+        }
+
         private static int NoelEnemyOverlapMask()
         {
             if (_noelEnemyMask >= 0)
@@ -1356,7 +1418,7 @@ namespace KnightInCradle.CharmUi
             {
                 return; // 素材缺失：判定照常，只是不显示
             }
-            if (_noelElegyMesh != null && _noelElegyMap == mp && _noelElegyTicket != null)
+            if (_noelElegyMesh != null && _noelElegyMap == mp && _noelElegyTicket != null && TicketUsable(_noelElegyTicket, _noelElegyMesh))
             {
                 return;
             }
@@ -2219,7 +2281,7 @@ namespace KnightInCradle.CharmUi
             }
             bool behind = KnightInCradlePlugin.BaldurShellBehindNoel;
             if (_noelShellMesh != null && _noelShellMap == mp && _noelShellTicket != null &&
-                _noelShellTicketBehind == behind)
+                TicketUsable(_noelShellTicket, _noelShellMesh) && _noelShellTicketBehind == behind)
             {
                 return;
             }
@@ -2503,6 +2565,8 @@ namespace KnightInCradle.CharmUi
         /// 贴图（法阵圆 / 球体）直接复用骑士侧的程序化生成方法（`KnightEntity.MakeShelter*Texture`）。
         /// </summary>
         private static readonly HashSet<NelEnemy> _noelShelterInside = new HashSet<NelEnemy>();
+        /// <summary>法阵内的"非魔物战斗目标"（城市术士等）下次可再受伤的时间。</summary>
+        private static readonly Dictionary<object, float> _noelShelterGenericNextHit = new Dictionary<object, float>();
         private static float _noelShelterDamageTimer = NoelShelterDamageTick;
         private static float _noelShelterRingTimer = NoelShelterRingInterval;
         private static float _noelShelterRingRadius = -1f;
@@ -2550,6 +2614,7 @@ namespace KnightInCradle.CharmUi
                 if (IsKnightMode || !IsEquipped(CharmOwner.Noel, ShelterId))
                 {
                     _noelShelterInside.Clear();
+                    _noelShelterGenericNextHit.Clear();
                     _noelShelterTrapDone.Clear();
                     _noelShelterDamageTimer = NoelShelterDamageTick;
                     _noelShelterRingTimer = NoelShelterRingInterval;
@@ -2653,7 +2718,15 @@ namespace KnightInCradle.CharmUi
                             continue;
                         }
                         NelEnemy enemy = c.GetComponentInParent<NelEnemy>();
-                        if (enemy == null || !enemy.is_alive || enemy.Mp != mp || IsEnemySummoning(enemy) ||
+                        if (enemy == null)
+                        {
+                            // 非 NelEnemy 的战斗目标（如保卫战里的城市术士 `M2CityCaster`）：
+                            // 走通用目标通道，按"每目标 1 秒一次"结算
+                            TryDamageGenericTargetNoel(c, pr, dmg, _noelShelterGenericNextHit,
+                                Time.time, NoelShelterDamageTick);
+                            continue;
+                        }
+                        if (!enemy.is_alive || enemy.Mp != mp || IsEnemySummoning(enemy) ||
                             !insideNow.Add(enemy))
                         {
                             continue; // 生成中的魔物不进法阵判定
@@ -2784,7 +2857,8 @@ namespace KnightInCradle.CharmUi
                 _noelShelterSphereTex = KnightEntity.MakeShelterSphereTexture(64);
             }
             if (_noelShelterCircleTicket != null && _noelShelterFxTicket != null &&
-                _noelShelterSphereTicket != null && ReferenceEquals(_noelShelterMap, mp))
+                _noelShelterSphereTicket != null && TicketUsable(_noelShelterCircleTicket, _noelShelterCircleMesh) &&
+                ReferenceEquals(_noelShelterMap, mp))
             {
                 return;
             }
@@ -3579,7 +3653,7 @@ namespace KnightInCradle.CharmUi
                 return; // 素材缺失：只是不显示，爆炸伤害照常
             }
             if (_noelSpikeMesh != null && _noelSpikeMat != null && _noelSpikeTicket != null &&
-                ReferenceEquals(_noelSpikeMap, mp))
+                TicketUsable(_noelSpikeTicket, _noelSpikeMesh) && ReferenceEquals(_noelSpikeMap, mp))
             {
                 return;
             }
@@ -5331,7 +5405,7 @@ namespace KnightInCradle.CharmUi
             {
                 return;
             }
-            if (_noelShieldMesh != null && _noelShieldMap == mp && _noelShieldTicket != null)
+            if (_noelShieldMesh != null && _noelShieldMap == mp && _noelShieldTicket != null && TicketUsable(_noelShieldTicket, _noelShieldMesh))
             {
                 return;
             }
@@ -5544,7 +5618,7 @@ namespace KnightInCradle.CharmUi
             {
                 return;
             }
-            if (_nmCircleMesh != null && _nmCircleMap == mp && _nmCircleTicket != null)
+            if (_nmCircleMesh != null && _nmCircleMap == mp && _nmCircleTicket != null && TicketUsable(_nmCircleTicket, _nmCircleMesh))
             {
                 return;
             }
@@ -6239,7 +6313,7 @@ namespace KnightInCradle.CharmUi
             {
                 return;
             }
-            if (_noelWeaverMesh != null && ReferenceEquals(_noelWeaverTicketMap, mp) && _noelWeaverTicket != null)
+            if (_noelWeaverMesh != null && ReferenceEquals(_noelWeaverTicketMap, mp) && _noelWeaverTicket != null && TicketUsable(_noelWeaverTicket, _noelWeaverMesh))
             {
                 return;
             }
@@ -7200,7 +7274,7 @@ namespace KnightInCradle.CharmUi
             {
                 return; // 素材缺失：判定照常，只是不显示
             }
-            if (_noelLongNailArcMesh != null && _noelLongNailArcMap == mp && _noelLongNailArcTicket != null)
+            if (_noelLongNailArcMesh != null && _noelLongNailArcMap == mp && _noelLongNailArcTicket != null && TicketUsable(_noelLongNailArcTicket, _noelLongNailArcMesh))
             {
                 return;
             }
@@ -8064,7 +8138,7 @@ namespace KnightInCradle.CharmUi
             {
                 return; // 素材缺失：只是不显示，连击与伤害照常
             }
-            if (_heavyFocusAuraMesh != null && _heavyFocusAuraMap == mp && _heavyFocusAuraTicket != null)
+            if (_heavyFocusAuraMesh != null && _heavyFocusAuraMap == mp && _heavyFocusAuraTicket != null && TicketUsable(_heavyFocusAuraTicket, _heavyFocusAuraMesh))
             {
                 return;
             }
@@ -10757,7 +10831,7 @@ namespace KnightInCradle.CharmUi
             {
                 return; // 素材缺失：只是不显示光圈
             }
-            if (_noelChargeAuraMesh != null && _noelChargeAuraMap == mp && _noelChargeAuraTicket != null)
+            if (_noelChargeAuraMesh != null && _noelChargeAuraMap == mp && _noelChargeAuraTicket != null && TicketUsable(_noelChargeAuraTicket, _noelChargeAuraMesh))
             {
                 return;
             }
@@ -10866,7 +10940,7 @@ namespace KnightInCradle.CharmUi
             {
                 return; // 素材缺失：只是不显示这张图
             }
-            if (_shadowDashBurstMesh != null && _shadowDashBurstMap == mp && _shadowDashBurstTicket != null)
+            if (_shadowDashBurstMesh != null && _shadowDashBurstMap == mp && _shadowDashBurstTicket != null && TicketUsable(_shadowDashBurstTicket, _shadowDashBurstMesh))
             {
                 return;
             }
@@ -11128,7 +11202,7 @@ namespace KnightInCradle.CharmUi
             {
                 return;
             }
-            if (_noelShadowMesh != null && _noelShadowMap == mp && _noelShadowTicket != null)
+            if (_noelShadowMesh != null && _noelShadowMap == mp && _noelShadowTicket != null && TicketUsable(_noelShadowTicket, _noelShadowMesh))
             {
                 return;
             }
@@ -13008,7 +13082,7 @@ namespace KnightInCradle.CharmUi
             {
                 return;
             }
-            if (_noelFuryGlowMesh != null && _noelFuryGlowMap == mp && _noelFuryGlowTicket != null)
+            if (_noelFuryGlowMesh != null && _noelFuryGlowMap == mp && _noelFuryGlowTicket != null && TicketUsable(_noelFuryGlowTicket, _noelFuryGlowMesh))
             {
                 return;
             }

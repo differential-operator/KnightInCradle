@@ -21,8 +21,9 @@ namespace KnightInCradle
         /// 配合后面的 `dll=路径 (文件时间)` 可以立刻确认游戏实际加载的是哪一份 DLL。
         /// </summary>
         // 2026-09-27.42：护符槽配方标记为"已知"（CInfo.obtain_flag）→ 才会出现在炼金列表里
-        // 2026-09-27.50：30 乔尼的祝福 文案去掉"部分"
-        internal const string SelfBuildTag = "2026-09-27.50";
+        // 2026-09-27.51：战场（格拉提亚保卫战）里诺艾尔"带渲染的护符"集体失效的修复：
+        // 票据存活/容器换代自愈 + 每个护符各自 try/catch + 法阵也打城市术士
+        internal const string SelfBuildTag = "2026-09-27.51";
 
         private static bool _harmonyApplied;
         private static bool _seriousInitApplied; // 启动时是否已应用过一次布局（防止残留居中布局）
@@ -440,6 +441,7 @@ namespace KnightInCradle
                 PRNoel pr = GetPr();
                 if (pr == null || !pr.is_alive || pr.Mp == null)
                 {
+                    LogNoelCharmTickSkip(pr);
                     return;
                 }
                 if (!ReferenceEquals(pr.Mp, _noelCharmMap))
@@ -447,33 +449,91 @@ namespace KnightInCradle
                     _noelCharmMap = pr.Mp;
                     CharmEffects.UpdateHiveRoom(pr.Mp);
                 }
-                CharmEffects.TickNoelSturdyCharm(pr);
-                CharmEffects.TickNoelMoveSpeedCharms(pr);
-                CharmEffects.TickNoelElegyCharm(pr);
-                CharmEffects.TickNoelHeavyBlowCharm(pr);
-                CharmEffects.TickNoelHeartCharm(pr);
-                CharmEffects.TickNoelLongNailArc(pr);
-                CharmEffects.TickNoelBaldurShellCharm(pr);
-                CharmEffects.TickNoelNestCharm(pr);
-                CharmEffects.TickNoelUterusCharm(pr);
-                CharmEffects.TickNoelShelterCharm(pr);
-                CharmEffects.TickNoelDreamShieldCharm(pr);
-                NoelGrimm.Tick(pr); // 护符39 格林之子（诺艾尔侧，走共享 GrimmController）
-                CharmEffects.TickNoelDeepGatherCharm(pr);
-                CharmEffects.TickNoelHiveBloodCharm(pr);
-                CharmEffects.TickNoelKingsoulCharm(pr); // 护符41 国王之魂：每 2 秒 +5 MP
-                CharmEffects.TickNoelShadowChantCharm(pr);
-                NoelPoseBrowser.Tick(pr);
-                CharmEffects.SyncGreedCapacity();
-                CharmEffects.ClearHiveEnemyAim();
-                CharmEffects.ClearUnnFriendlyAims();
-                CharmEffects.TickUnnCrouchHeal(pr);
-                CharmEffects.TickNoelNailMasterCharm(pr);
-                CharmEffects.TickNoelBurstCombo(pr); // 护符35：攻击+魔法 组合键放圣光爆发
-                CharmEffects.TickNoelWeaversongCharm(pr);
-                CharmEffects.TickNoelFuryCharm(pr);
-                CharmEffects.TickNoelFuryVisual(pr); // 护符20 效果7：中心红色闪烁（红边在 OnGUI）
-                CharmEffects.TickCollectorAutoPickup(pr.x, pr.mbottom);
+                // 战场（如格拉提亚保卫战）会重建渲染容器：先检查一次，票据换代就整体作废重建
+                CharmEffects.ValidateNoelTicketRenderer(pr.Mp);
+                CharmTick("3坚硬外壳", () => CharmEffects.TickNoelSturdyCharm(pr));
+                CharmTick("7冲刺大师/8飞毛腿", () => CharmEffects.TickNoelMoveSpeedCharms(pr));
+                CharmTick("10蜕变挽歌", () => CharmEffects.TickNoelElegyCharm(pr));
+                CharmTick("16沉重之击", () => CharmEffects.TickNoelHeavyBlowCharm(pr));
+                CharmTick("11坚固心脏", () => CharmEffects.TickNoelHeartCharm(pr));
+                CharmTick("18修长之钉/19骄傲印记", () => CharmEffects.TickNoelLongNailArc(pr));
+                CharmTick("22巴尔德之壳", () => CharmEffects.TickNoelBaldurShellCharm(pr));
+                CharmTick("23吸虫之巢", () => CharmEffects.TickNoelNestCharm(pr));
+                CharmTick("25发光子宫", () => CharmEffects.TickNoelUterusCharm(pr));
+                CharmTick("24防御者纹章", () => CharmEffects.TickNoelShelterCharm(pr));
+                CharmTick("38梦之盾", () => CharmEffects.TickNoelDreamShieldCharm(pr));
+                CharmTick("39格林之子", () => NoelGrimm.Tick(pr));
+                CharmTick("27深度聚集", () => CharmEffects.TickNoelDeepGatherCharm(pr));
+                CharmTick("31蜂巢之血", () => CharmEffects.TickNoelHiveBloodCharm(pr));
+                CharmTick("41国王之魂", () => CharmEffects.TickNoelKingsoulCharm(pr));
+                CharmTick("33锋利之影", () => CharmEffects.TickNoelShadowChantCharm(pr));
+                CharmTick("姿势浏览", () => NoelPoseBrowser.Tick(pr));
+                CharmTick("12坚固贪婪", () => CharmEffects.SyncGreedCapacity());
+                CharmTick("2蜂群集结-蜂巢清仇恨", () => CharmEffects.ClearHiveEnemyAim());
+                CharmTick("34乌恩之形-清仇恨", () => CharmEffects.ClearUnnFriendlyAims());
+                CharmTick("34乌恩之形-蹲伏回血", () => CharmEffects.TickUnnCrouchHeal(pr));
+                CharmTick("35骨钉大师的荣耀", () => CharmEffects.TickNoelNailMasterCharm(pr));
+                CharmTick("35圣光爆发组合键", () => CharmEffects.TickNoelBurstCombo(pr));
+                CharmTick("36编织者之歌", () => CharmEffects.TickNoelWeaversongCharm(pr));
+                CharmTick("20亡者之怒", () => CharmEffects.TickNoelFuryCharm(pr));
+                CharmTick("20亡者之怒-红色闪烁", () => CharmEffects.TickNoelFuryVisual(pr));
+                CharmTick("2蜂群集结-自动拾取", () => CharmEffects.TickCollectorAutoPickup(pr.x, pr.mbottom));
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>已记录过的诺艾尔护符每帧异常（同类只记一次，避免刷屏）。</summary>
+        private static readonly System.Collections.Generic.HashSet<string> NoelCharmTickErrors =
+            new System.Collections.Generic.HashSet<string>();
+
+        private static float _noelTickSkipLoggedAt = -100f;
+
+        /// <summary>
+        /// 单个诺艾尔护符的每帧逻辑：**各自 try/catch**。
+        /// 以前这些调用共用一个 try：只要某个护符抛异常（例如战场地图重建时的票据创建），
+        /// 排在它后面的所有护符（渲染 + 判定）都会一起失效。
+        /// </summary>
+        private static void CharmTick(string label, Action body)
+        {
+            try
+            {
+                body();
+            }
+            catch (Exception ex)
+            {
+                if (NoelCharmTickErrors.Add(label))
+                {
+                    KnightInCradlePlugin.PluginLog?.LogWarning(
+                        "[KIC][诺艾尔护符] " + label + " 每帧逻辑异常（同类只记一次）：" +
+                        ex.GetType().Name + " " + ex.Message);
+                }
+            }
+        }
+
+        /// <summary>整段诺艾尔护符逻辑被跳过时的诊断（5 秒最多一条，用来定位"战斗里护符全失效"）。</summary>
+        private static void LogNoelCharmTickSkip(PRNoel pr)
+        {
+            try
+            {
+                if (Time.unscaledTime - _noelTickSkipLoggedAt < 5f)
+                {
+                    return;
+                }
+                _noelTickSkipLoggedAt = Time.unscaledTime;
+                NelM2DBase m2d = M2DBase.Instance as NelM2DBase;
+                if (m2d == null)
+                {
+                    return; // 主菜单/读档中本来就没有诺艾尔，不用记
+                }
+                PRNoel live = m2d != null ? m2d.getPrNoel() : null;
+                KnightInCradlePlugin.PluginLog?.LogInfo(
+                    "[KIC][诺艾尔护符] 每帧逻辑被跳过：pr=" + (pr == null ? "null" : "ok") +
+                    " is_alive=" + (pr != null && pr.is_alive) +
+                    " Mp=" + (pr != null && pr.Mp != null) +
+                    " 当前Pr=" + (live == null ? "null" : live.GetInstanceID().ToString()) +
+                    " M2D=" + (m2d == null ? "null" : "ok"));
             }
             catch (Exception)
             {
