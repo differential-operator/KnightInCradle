@@ -30,6 +30,8 @@ namespace KnightInCradle.Grimm
         public const float FireballSpread = 30f * Mathf.Deg2Rad;
         public const float FireballScale = 0.3f;
         public const float ShootFireTime = 4f / 12f;
+        /// <summary>睡眠渲染的额外 Y 偏移（格，向上为负）。</summary>
+        public const float SleepRenderOffY = -0.5f;
 
         public sealed class Child
         {
@@ -306,7 +308,7 @@ namespace KnightInCradle.Grimm
             catch (Exception)
             {
             }
-            return groundY;
+            return groundY + SleepRenderOffY;
         }
 
         private bool FindTarget(Child g)
