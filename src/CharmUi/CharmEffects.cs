@@ -7964,7 +7964,8 @@ namespace KnightInCradle.CharmUi
         // ================= 护符16 沉重之击（诺艾尔侧：命中叠"会心"层数） =================
         /// <summary>
         /// 沉重之击：**击中目标**时获得 1 层"会心"，每层让造成的伤害 +8%，**可无限叠加**；
-        /// **受到伤害**时失去全部层数（需求 2026-09-28，取代原来的"连击 5 次进入会心"）。
+        /// **受到伤害**时失去 25 层（需求 2026-09-28；取代原来的"连击 5 次进入会心 / 未命中清空"，
+        /// 也把"受伤清空"放宽成 -25 层）。
         /// </summary>
         public const float HeavyBlowFocusPerStack = 0.08f;
 
@@ -8138,13 +8139,21 @@ namespace KnightInCradle.CharmUi
             LogCritCounter("击中");
         }
 
-        /// <summary>诺艾尔受到伤害：失去全部"会心"层数（光圈随之消失）。</summary>
+        /// <summary>受到伤害时失去的"会心"层数（需求 2026-09-28：从"失去全部"改成 -25 层）。</summary>
+        public const int CritStackLossOnHit = 25;
+
+        /// <summary>诺艾尔受到伤害：失去 `CritStackLossOnHit` 层"会心"（不足则清零）。</summary>
         private static void NotifyNoelTookDamage()
         {
             if (_heavyFocusHits > 0 || _heavyFocusActive)
             {
-                ResetHeavyFocus();
-                LogCritCounter("受伤清零");
+                _heavyFocusHits = Mathf.Max(0, _heavyFocusHits - CritStackLossOnHit);
+                _heavyFocusActive = _heavyFocusHits > 0;
+                if (_heavyFocusHits == 0)
+                {
+                    _heavyFocusAuraTime = 0f;
+                }
+                LogCritCounter("受伤-" + CritStackLossOnHit);
             }
         }
 
