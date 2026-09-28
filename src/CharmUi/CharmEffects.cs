@@ -8091,11 +8091,9 @@ namespace KnightInCradle.CharmUi
                     EnsureHeavyFocusAuraTicket(pr, false);
                     return;
                 }
-                if (IsHeavyFocusActive)
-                {
-                    _heavyFocusAuraTime += Time.deltaTime;
-                }
-                EnsureHeavyFocusAuraTicket(pr, IsHeavyFocusActive);
+                // 需求 2026-09-28：**去掉沉重之击身后的光圈特效**（层数/伤害逻辑不变）。
+                // 这里固定按"不显示"维护，已有票据会被释放；层数仍然累计。
+                EnsureHeavyFocusAuraTicket(pr, false);
             }
             catch (Exception)
             {
