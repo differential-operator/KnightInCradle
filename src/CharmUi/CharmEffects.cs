@@ -7970,8 +7970,19 @@ namespace KnightInCradle.CharmUi
 
         /// <summary>当前"会心"层数（供跟随诺艾尔的层数文本框显示）。</summary>
         public static int NoelHeavyBlowStacks => _heavyFocusHits;
-        /// <summary>"会心"光圈素材（需求指定 nail_charge_effect0005～0009，与小骑士骨钉技艺蓄力同款）。</summary>
-        private static readonly string[] HeavyBlowAuraSprites =
+        /// <summary>会心层数文本框：锚点相对"诺艾尔身体中心"的纵向偏移（格；y 向下为正，负值=向上）。</summary>
+        private const float CritCounterOffY = -1.1f;
+        /// <summary>字形图集的字号（像素）。</summary>
+        private const int CritCounterFontPx = 64;
+        /// <summary>字形缩放：字体像素 → 地图像素（数字高度 ≈ 字号 × 本值）。</summary>
+        private const float CritCounterDigitScale = 0.15f;
+        /// <summary>需求指定颜色：#FF41CE。</summary>
+        private static readonly Color32 CritCounterColor = new Color32(0xFF, 0x41, 0xCE, 0xFF);
+        /// <summary>
+        /// 蓄力类光圈（护符33 锋利之影蓄力段）共用的贴图：`nail_charge_effect0005~0009`
+        /// （护符16 原本也用它，现已改成数字文本框）。
+        /// </summary>
+        private static readonly string[] ChargeAuraSprites =
         {
             "nail_charge_effect0005",
             "nail_charge_effect0006",
@@ -7979,18 +7990,23 @@ namespace KnightInCradle.CharmUi
             "nail_charge_effect0008",
             "nail_charge_effect0009",
         };
-        /// <summary>光圈播放帧率（与小骑士骨钉技艺蓄力的 20fps 一致）。</summary>
-        private const float HeavyBlowAuraFps = 20f;
-        /// <summary>光圈渲染大小倍率（需求：当前的 1.5 倍）。</summary>
-        private const float HeavyBlowAuraScale = 1.5f;
-        /// <summary>光圈锚点的额外纵向偏移（格；AIC 的 y **向下为正**，所以 -1 = 向上 1 格）。</summary>
-        private const float HeavyBlowAuraOffY = -1f;
+        /// <summary>蓄力光圈的播放帧率（20fps，同小骑士骨钉技艺蓄力）。</summary>
+        private const float ChargeAuraFps = 20f;
+        /// <summary>蓄力光圈的渲染大小倍率。</summary>
+        private const float ChargeAuraScale = 1.5f;
+        /// <summary>蓄力光圈锚点的额外纵向偏移（格；y 向下为正，-1 = 向上 1 格）。</summary>
+        private const float ChargeAuraOffY = -1f;
+
+        /// <summary>数字字形（0~9，取自动态字体图集）。</summary>
+        private static readonly CharacterInfo[] _critGlyphs = new CharacterInfo[10];
+        private static Font _critFont;
+        private static bool _critGlyphsReady;
         /// <summary>"会心"层数（每次击中目标 +1；受到伤害清零；可无限叠加）。</summary>
         private static int _heavyFocusHits;
         /// <summary>是否持有"会心"（层数 &gt; 0；受到伤害立即失去全部）。</summary>
         private static bool _heavyFocusActive;
         private static float _heavyFocusAuraTime;
-        private static Texture2D[] _heavyFocusAuraTex;
+        private static Texture2D[] _chargeAuraTex;
         private static MeshDrawer _heavyFocusAuraMesh;
         private static Material _heavyFocusAuraMat;
         private static M2RenderTicket _heavyFocusAuraTicket;
@@ -8017,6 +8033,7 @@ namespace KnightInCradle.CharmUi
         {
             _heavyFocusHits++;
             _heavyFocusActive = true;
+            LogCritCounter("击中");
         }
 
         /// <summary>诺艾尔受到伤害：失去全部"会心"层数（光圈随之消失）。</summary>
@@ -8025,6 +8042,27 @@ namespace KnightInCradle.CharmUi
             if (_heavyFocusHits > 0 || _heavyFocusActive)
             {
                 ResetHeavyFocus();
+                LogCritCounter("受伤清零");
+            }
+        }
+
+        /// <summary>临时诊断（2026-09-28）：层数变化记前 40 条，用来核对"只显示到 1"的成因。</summary>
+        private static int _critCounterLogCount;
+
+        private static void LogCritCounter(string tag)
+        {
+            try
+            {
+                if (_critCounterLogCount >= 40)
+                {
+                    return;
+                }
+                _critCounterLogCount++;
+                KnightInCradlePlugin.PluginLog?.LogInfo(
+                    "[KIC][沉重之击] " + tag + " → 层数=" + _heavyFocusHits);
+            }
+            catch (Exception)
+            {
             }
         }
 
@@ -8065,7 +8103,7 @@ namespace KnightInCradle.CharmUi
                     ResetHeavyFocus();
                     return;
                 }
-                if (Mg == null || !(Mg.Caster is PRNoel) || !IsDamagingAttack(Mg))
+                if (Mg == null || !(Mg.Caster is PRNoel))
                 {
                     return;
                 }
@@ -8091,12 +8129,12 @@ namespace KnightInCradle.CharmUi
                 if (IsKnightMode || !IsEquipped(CharmOwner.Noel, HeavyBlowId))
                 {
                     ResetHeavyFocus();
-                    EnsureHeavyFocusAuraTicket(pr, false);
+                    EnsureNoelCritCounterTicket(pr, false);
                     return;
                 }
-                // 需求 2026-09-28：**去掉沉重之击身后的光圈特效**（层数/伤害逻辑不变）。
-                // 这里固定按"不显示"维护，已有票据会被释放；层数仍然累计。
-                EnsureHeavyFocusAuraTicket(pr, false);
+                // 需求 2026-09-28：**去掉沉重之击身后的光圈特效**，改成跟随诺艾尔的"会心层数"数字文本框
+                // （只显示数字，颜色 #FF41CE；位置与诺艾尔同帧同步）。
+                EnsureNoelCritCounterTicket(pr, true);
             }
             catch (Exception)
             {
@@ -8104,7 +8142,7 @@ namespace KnightInCradle.CharmUi
         }
 
         /// <summary>"会心"光圈票据：绑当前地图的 MovRenderer（玩家身后层 PR0，同小骑士蓄力光圈）。</summary>
-        private static void EnsureHeavyFocusAuraTicket(PRNoel pr, bool want)
+        private static void EnsureNoelCritCounterTicket(PRNoel pr, bool want)
         {
             Map2d mp = pr != null ? pr.Mp : null;
             if (mp == null)
@@ -8116,13 +8154,9 @@ namespace KnightInCradle.CharmUi
                 ReleaseHeavyFocusAuraTicket();
                 return;
             }
-            if (_heavyFocusAuraTex == null)
+            if (!EnsureCritGlyphs())
             {
-                _heavyFocusAuraTex = LoadHeavyFocusAuraTextures();
-            }
-            if (_heavyFocusAuraTex == null)
-            {
-                return; // 素材缺失：只是不显示，连击与伤害照常
+                return; // 字形不可用：只是不显示，层数与伤害照常
             }
             if (_heavyFocusAuraMesh != null && _heavyFocusAuraMap == mp && _heavyFocusAuraTicket != null && TicketUsable(_heavyFocusAuraTicket, _heavyFocusAuraMesh))
             {
@@ -8134,9 +8168,9 @@ namespace KnightInCradle.CharmUi
             _heavyFocusAuraMesh.draw_gl_only = true;
             _heavyFocusAuraMat = MTRX.newMtr(MTRX.ShaderGDT);
             _heavyFocusAuraMat.EnableKeyword("NO_PIXELSNAP");
-            _heavyFocusAuraMesh.activate("noel_heavy_focus", _heavyFocusAuraMat, false, MTRX.ColWhite, null);
+            _heavyFocusAuraMesh.activate("noel_crit_counter", _heavyFocusAuraMat, false, MTRX.ColWhite, null);
             _heavyFocusAuraTicket = mp.MovRenderer.assignDrawable(
-                M2Mover.DRAW_ORDER.PR0, null, PrepareHeavyFocusAuraMesh, _heavyFocusAuraMesh, null, null);
+                M2Mover.DRAW_ORDER.PR1, null, PrepareHeavyFocusAuraMesh, _heavyFocusAuraMesh, null, null);
         }
 
         private static void ReleaseHeavyFocusAuraTicket()
@@ -8168,7 +8202,10 @@ namespace KnightInCradle.CharmUi
             _heavyFocusAuraMap = null;
         }
 
-        /// <summary>光圈绘制：锚定诺艾尔中心，按 20fps 循环播 nail_charge_effect0005～0009。</summary>
+        /// <summary>
+        /// 会心层数文本框绘制（地图像素空间，和诺艾尔同帧同速）：
+        /// 锚定"诺艾尔身体中心 + `CritCounterOffY`"，只用字形图集拼出数字，颜色 #FF41CE。
+        /// </summary>
         private static bool PrepareHeavyFocusAuraMesh(Camera Cam, M2RenderTicket Tk, bool need_redraw, int draw_id,
             out MeshDrawer MdOut, ref bool color_one_overwrite)
         {
@@ -8180,54 +8217,113 @@ namespace KnightInCradle.CharmUi
             }
             _heavyFocusAuraMesh.clearSimple();
             PRNoel pr = KnightInCradleBehaviour.GetPrPublic();
-            if (pr == null || _heavyFocusAuraTex == null || !IsHeavyFocusActive)
-            {
-                MdOut = _heavyFocusAuraMesh;
-                return true;
-            }
-            int frame = Mathf.Abs((int)(_heavyFocusAuraTime * HeavyBlowAuraFps)) % _heavyFocusAuraTex.Length;
-            Texture2D tex = _heavyFocusAuraTex[frame];
-            if (tex == null)
+            if (pr == null || !_critGlyphsReady || !IsCritCounterWanted(pr))
             {
                 MdOut = _heavyFocusAuraMesh;
                 return true;
             }
             // 锚点 = 诺艾尔**身体中心**：`pr.mbottom` 是脚底、`pr.sizey` 是身高（格），
-            // 所以中心 = 脚底 − 身高/2（比直接用 `pr.y` 稳，AIC 里 `y` 并不总等于身体中心）。
-            // 再按需求上移 `HeavyBlowAuraOffY` 格（y 向下为正，-1 = 向上 1 格）。
-            float cy = pr.mbottom - pr.sizey * 0.5f + HeavyBlowAuraOffY;
+            // 所以中心 = 脚底 − 身高/2（比直接用 `pr.y` 稳，AIC 里 `y` 并不总等于身体中心），
+            // 再按 `CritCounterOffY` 上移（y 向下为正，负值=向上）。
+            float cy = pr.mbottom - pr.sizey * 0.5f + CritCounterOffY;
             float mx = mp.pixel2ux(pr.x * mp.CLEN);
             float my = mp.pixel2uy(cy * mp.CLEN);
             Tk.Matrix = mp.gameObject.transform.localToWorldMatrix *
                         Matrix4x4.Translate(new Vector3(mx, my, 0f));
-            float scale = KnightInCradlePlugin.ScaleConfig != null
-                ? KnightInCradlePlugin.ScaleConfig.Value
-                : 0.325f;
-            float w = tex.width * scale * HeavyBlowAuraScale;
-            float h = tex.height * scale * HeavyBlowAuraScale;
-            _heavyFocusAuraMesh.Col = MTRX.ColWhite;
-            _heavyFocusAuraMesh.initForImgAndTexture(tex);
-            _heavyFocusAuraMesh.uv_top = 0f;
-            _heavyFocusAuraMesh.uv_height = 1f;
-            _heavyFocusAuraMesh.uv_left = 0f;
-            _heavyFocusAuraMesh.uv_width = 1f;
-            // 注意 `MeshDrawer.Rect(x, y, w, h)` 的 (x,y) **本身就是矩形中心**
-            // （内部 `RectBL(x - w/2, y - h/2, …)`），所以传 (0,0) 才是"以锚点为中心"。
-            // 之前多减了一次半宽高，整体被推到诺艾尔左下方，而且放大时偏移会等比变大。
-            _heavyFocusAuraMesh.Rect(0f, 0f, w, h, false);
+            Texture2D fontTex = _critFont != null && _critFont.material != null
+                ? _critFont.material.mainTexture as Texture2D
+                : null;
+            if (fontTex == null)
+            {
+                MdOut = _heavyFocusAuraMesh;
+                return true;
+            }
+            _heavyFocusAuraMesh.initForImgAndTexture(fontTex);
+            _heavyFocusAuraMesh.Col = CritCounterColor;
+            string text = NoelHeavyBlowStacks.ToString();
+            // 先算总宽（字体像素），让数字整体相对诺艾尔居中
+            float total = 0f;
+            for (int i = 0; i < text.Length; i++)
+            {
+                total += _critGlyphs[text[i] - '0'].advance;
+            }
+            float pen = -total * 0.5f;
+            for (int i = 0; i < text.Length; i++)
+            {
+                CharacterInfo ci = _critGlyphs[text[i] - '0'];
+                float gw = (ci.maxX - ci.minX) * CritCounterDigitScale;
+                float gh = (ci.maxY - ci.minY) * CritCounterDigitScale;
+                if (gw > 0.0001f && gh > 0.0001f)
+                {
+                    // 字形 UV：AIC 的 uv_top 是"贴图顶边"坐标，Unity 的 CharacterInfo 是底边原点 → 换算一次
+                    _heavyFocusAuraMesh.uv_left = ci.uvTopLeft.x;
+                    _heavyFocusAuraMesh.uv_width = ci.uvTopRight.x - ci.uvTopLeft.x;
+                    _heavyFocusAuraMesh.uv_top = 1f - ci.uvTopLeft.y;
+                    _heavyFocusAuraMesh.uv_height = ci.uvTopLeft.y - ci.uvBottomLeft.y;
+                    // Rect 的 (x,y) 是中心：把字形左下角放在 (pen + minX, minY)
+                    _heavyFocusAuraMesh.Rect(
+                        (pen + ci.minX) * CritCounterDigitScale + gw * 0.5f,
+                        ci.minY * CritCounterDigitScale + gh * 0.5f,
+                        gw, gh, false);
+                }
+                pen += ci.advance;
+            }
             MdOut = _heavyFocusAuraMesh;
             return true;
         }
 
-        private static Texture2D[] LoadHeavyFocusAuraTextures()
+        /// <summary>会心层数文本框：只在诺艾尔戴着护符16（且不是骑士模式）时显示。</summary>
+        private static bool IsCritCounterWanted(PRNoel pr)
+        {
+            return pr != null && !IsKnightMode && IsEquipped(CharmOwner.Noel, HeavyBlowId);
+        }
+
+        /// <summary>取字形（数字 0~9）：用 Unity 动态字体的字形图集 UV 直接拼四边形，不需要额外素材。</summary>
+        private static bool EnsureCritGlyphs()
+        {
+            if (_critGlyphsReady)
+            {
+                return true;
+            }
+            try
+            {
+                if (_critFont == null)
+                {
+                    _critFont = Font.CreateDynamicFontFromOSFont(
+                        new[] { "Arial", "Microsoft YaHei", "Yu Gothic UI", "SimSun" }, CritCounterFontPx);
+                }
+                if (_critFont == null)
+                {
+                    return false;
+                }
+                _critFont.RequestCharactersInTexture("0123456789", CritCounterFontPx, FontStyle.Bold);
+                for (int i = 0; i < 10; i++)
+                {
+                    if (!_critFont.GetCharacterInfo((char)('0' + i), out _critGlyphs[i],
+                            CritCounterFontPx, FontStyle.Bold))
+                    {
+                        return false;
+                    }
+                }
+                _critGlyphsReady = true;
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>蓄力光圈贴图（`nail_charge_effect0005~0009`，护符33 蓄力段用）。</summary>
+        private static Texture2D[] LoadChargeAuraTextures()
         {
             try
             {
-                var list = new Texture2D[HeavyBlowAuraSprites.Length];
+                var list = new Texture2D[ChargeAuraSprites.Length];
                 for (int i = 0; i < list.Length; i++)
                 {
                     string path = System.IO.Path.Combine(BepInEx.Paths.PluginPath, "KnightInCradle", "assets",
-                        "hk", "sprites", HeavyBlowAuraSprites[i] + ".png");
+                        "hk", "sprites", ChargeAuraSprites[i] + ".png");
                     if (!System.IO.File.Exists(path))
                     {
                         return null;
@@ -10809,11 +10905,11 @@ namespace KnightInCradle.CharmUi
                 ReleaseNoelChargeAuraTicket();
                 return;
             }
-            if (_heavyFocusAuraTex == null)
+            if (_chargeAuraTex == null)
             {
-                _heavyFocusAuraTex = LoadHeavyFocusAuraTextures();
+                _chargeAuraTex = LoadChargeAuraTextures();
             }
-            if (_heavyFocusAuraTex == null)
+            if (_chargeAuraTex == null)
             {
                 return; // 素材缺失：只是不显示光圈
             }
@@ -10875,23 +10971,23 @@ namespace KnightInCradle.CharmUi
             PRNoel pr = KnightInCradleBehaviour.GetPrPublic();
             bool wanted = _noelShadowEssence || _shadowDashPhase == ShadowDashPhase.Shrink ||
                           NailMasterCharged;
-            if (pr == null || _heavyFocusAuraTex == null || !wanted || _shadowDashAuraScale <= 0.001f)
+            if (pr == null || _chargeAuraTex == null || !wanted || _shadowDashAuraScale <= 0.001f)
             {
                 MdOut = _noelChargeAuraMesh;
                 return true;
             }
-            int frame = Mathf.Abs((int)(_noelChargeAuraTime * HeavyBlowAuraFps)) % _heavyFocusAuraTex.Length;
-            Texture2D tex = _heavyFocusAuraTex[frame];
+            int frame = Mathf.Abs((int)(_noelChargeAuraTime * ChargeAuraFps)) % _chargeAuraTex.Length;
+            Texture2D tex = _chargeAuraTex[frame];
             if (tex == null)
             {
                 MdOut = _noelChargeAuraMesh;
                 return true;
             }
-            float cy = NoelBodyCenterY(pr) + HeavyBlowAuraOffY;
+            float cy = NoelBodyCenterY(pr) + ChargeAuraOffY;
             Tk.Matrix = mp.gameObject.transform.localToWorldMatrix *
                         Matrix4x4.Translate(new Vector3(mp.pixel2ux(pr.x * mp.CLEN), mp.pixel2uy(cy * mp.CLEN), 0f));
             float scale = KnightInCradlePlugin.ScaleConfig != null ? KnightInCradlePlugin.ScaleConfig.Value : 0.325f;
-            float mult = HeavyBlowAuraScale * KnightInCradlePlugin.ShadowChargeAuraScale * _shadowDashAuraScale;
+            float mult = ChargeAuraScale * KnightInCradlePlugin.ShadowChargeAuraScale * _shadowDashAuraScale;
             float w = tex.width * scale * mult;
             float h = tex.height * scale * mult;
             _noelChargeAuraMesh.Col = MTRX.ColWhite;

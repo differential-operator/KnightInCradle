@@ -21,8 +21,9 @@ namespace KnightInCradle
         /// 配合后面的 `dll=路径 (文件时间)` 可以立刻确认游戏实际加载的是哪一份 DLL。
         /// </summary>
         // 2026-09-27.42：护符槽配方标记为"已知"（CInfo.obtain_flag）→ 才会出现在炼金列表里
-        // 2026-09-28.03：新增"会心层数"浮动文本框（跟随诺艾尔同速，只显示数字，颜色 #FF41CE）
-        internal const string SelfBuildTag = "2026-09-28.03";
+        // 2026-09-28.04：会心层数文本框改为"地图像素空间"绘制（修掉 OnGUI 版整体偏左下），
+        // 并加层数变化诊断日志（前 40 条）
+        internal const string SelfBuildTag = "2026-09-28.04";
 
         private static bool _harmonyApplied;
         private static bool _seriousInitApplied; // 启动时是否已应用过一次布局（防止残留居中布局）
@@ -167,8 +168,6 @@ namespace KnightInCradle
 
             // 诺艾尔模式：护符效果里"每帧维护"的部分（目前是护符2 蜂群集结的两件事）。
             // 未装备护符时这些调用都是立即返回的空操作。
-            // 护符16 沉重之击：会心层数文本框（跟随诺艾尔，与护符 UI 同一条 OnGUI 通道）
-            NoelCritCounter.Ensure(gameObject);
             if (!_knightMode)
             {
                 TickNoelCharmEffects();
