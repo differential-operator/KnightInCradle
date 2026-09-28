@@ -4534,6 +4534,12 @@ namespace KnightInCradle.CharmUi
                     return false;
                 }
                 // 护符21 苦痛荆棘 效果1：只免疫棘刺类（SPIKE）
+                // 护符34 乌恩之形 效果③（2026-09-28）：岩浆属于"液体"，其地图伤害与灼烧一并豁免
+                if (MDI.kind == MAPDMG.LAVA && IsEquipped(CharmOwner.Noel, UnnId))
+                {
+                    __result = null;
+                    return false;
+                }
                 if (MDI.kind != MAPDMG.SPIKE || !IsEquipped(CharmOwner.Noel, ThornsId))
                 {
                     return true;
@@ -9409,6 +9415,19 @@ namespace KnightInCradle.CharmUi
                             typeof(CharmEffects).GetMethod(nameof(NoelMushroomMistAtkPrefix),
                                 BindingFlags.Static | BindingFlags.NonPublic)));
                     }
+                    // 护符34 乌恩之形 效果③（2026-09-28）：液体里不受溺水窒息负面效果
+                    MethodInfo choke = AccessTools.Method(typeof(PR), "applyWaterChokeDamage");
+                    if (choke != null)
+                    {
+                        harmony.Patch(choke, prefix: new HarmonyMethod(
+                            typeof(CharmEffects).GetMethod(nameof(NoelLiquidChokePrefix),
+                                BindingFlags.Static | BindingFlags.NonPublic)));
+                    }
+                    else
+                    {
+                        KnightInCradlePlugin.PluginLog?.LogWarning(
+                            "[KIC][护符34] 未找到 PR.applyWaterChokeDamage：液体溺水免疫未挂上");
+                    }
                     // 护符32 效果2：诺艾尔打到蘑菇 → 给 1 个满级黑棉孢子（挂蘑菇自己的 override）
                     MethodInfo mushDmg = AccessTools.Method(typeof(NelNMush), "applyDamage",
                         new[]
@@ -11738,17 +11757,77 @@ namespace KnightInCradle.CharmUi
                    (IsEquipped(CharmOwner.Noel, MushroomId) || IsNoelFuryImmune) && IsMushroomMist(kind, atk);
         }
 
-        /// <summary>护符32：诺艾尔免疫蘑菇雾气（`PR.applyGasDamage` 的两个重载各拦一次）。</summary>
-        private static bool NoelMushroomMistLevelPrefix(PR __instance, MistManager.MistKind Mist)
+        /// <summary>
+        /// 这次"雾/液体"是否属于**液体**（护符34 乌恩之形 效果③，需求 2026-09-28）：
+        /// 水 / 沼泽 / 岩浆 / 海水 / 毒水 —— 只豁免这些的负面效果，浮起等物理照旧由原版处理。
+        /// </summary>
+        private static bool IsLiquidMist(MistManager.MistKind kind)
         {
-            return !NoelMushroomMistImmune(__instance, Mist, null);
+            try
+            {
+                if (kind == null)
+                {
+                    return false;
+                }
+                switch (kind.type)
+                {
+                    case MistManager.MISTTYPE.WATER:
+                    case MistManager.MISTTYPE.SWAMP:
+                    case MistManager.MISTTYPE.LAVA:
+                    case MistManager.MISTTYPE.SEA:
+                    case MistManager.MISTTYPE.POISON_WATER:
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
-        /// <summary>护符32：同上（带 MistAttackInfo 的重载，属性 ACME 直接判孢子雾）。</summary>
+        /// <summary>诺艾尔 + 护符34 乌恩之形：这次液体的负面效果可以直接免疫（浮起不受影响）。</summary>
+        private static bool NoelLiquidImmune(PR pr, MistManager.MistKind kind)
+        {
+            return pr is PRNoel && !IsKnightMode && IsEquipped(CharmOwner.Noel, UnnId) && IsLiquidMist(kind);
+        }
+
+        /// <summary>护符32/34：诺艾尔免疫蘑菇雾气 / 液体的负面影响（`PR.applyGasDamage` 两个重载各拦一次）。</summary>
+        private static bool NoelMushroomMistLevelPrefix(PR __instance, MistManager.MistKind Mist)
+        {
+            return !NoelMushroomMistImmune(__instance, Mist, null) && !NoelLiquidImmune(__instance, Mist);
+        }
+
+        /// <summary>护符32/34：同上（带 MistAttackInfo 的重载，属性 ACME 直接判孢子雾）。</summary>
         private static bool NoelMushroomMistAtkPrefix(PR __instance, MistManager.MistKind K,
             MistAttackInfo Atk)
         {
-            return !NoelMushroomMistImmune(__instance, K, Atk);
+            return !NoelMushroomMistImmune(__instance, K, Atk) && !NoelLiquidImmune(__instance, K);
+        }
+
+        /// <summary>
+        /// 护符34 乌恩之形 效果③（需求 2026-09-28）：诺艾尔在液体里**不受溺水窒息的负面效果**。
+        /// 挂 `PR.applyWaterChokeDamage`（`nel/PR.cs:2202`，水下 O2 见底时的那一发）：
+        /// 直接按"没发生"返回（`__result = 0`），于是不掉血、不强制蹲伏、不消耗 O2；
+        /// **不动** `M2Phys.setWaterDunk` / 浮力，所以她在液体里照旧正常浮起。
+        /// </summary>
+        private static bool NoelLiquidChokePrefix(PR __instance, ref int __result)
+        {
+            try
+            {
+                if (IsKnightMode || !(__instance is PRNoel) ||
+                    !IsEquipped(CharmOwner.Noel, UnnId))
+                {
+                    return true;
+                }
+                __result = 0;
+                return false;
+            }
+            catch (Exception)
+            {
+                return true;
+            }
         }
 
         /// <summary>
