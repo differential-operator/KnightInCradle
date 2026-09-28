@@ -7967,6 +7967,9 @@ namespace KnightInCradle.CharmUi
         /// <summary>当前"会心"层数带来的伤害倍率：1 + 0.08 × 层数。</summary>
         public static float HeavyBlowFocusMultNow =>
             1f + HeavyBlowFocusPerStack * Mathf.Max(0, _heavyFocusHits);
+
+        /// <summary>当前"会心"层数（供跟随诺艾尔的层数文本框显示）。</summary>
+        public static int NoelHeavyBlowStacks => _heavyFocusHits;
         /// <summary>"会心"光圈素材（需求指定 nail_charge_effect0005～0009，与小骑士骨钉技艺蓄力同款）。</summary>
         private static readonly string[] HeavyBlowAuraSprites =
         {
