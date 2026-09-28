@@ -21,9 +21,9 @@ namespace KnightInCradle
         /// 配合后面的 `dll=路径 (文件时间)` 可以立刻确认游戏实际加载的是哪一份 DLL。
         /// </summary>
         // 2026-09-27.42：护符槽配方标记为"已知"（CInfo.obtain_flag）→ 才会出现在炼金列表里
-        // 2026-09-28.12：34 乌恩之形追加"取消液体里的减速惩罚"（临时把 water_speed_scale 置 1，
-        // 在液体里的状态与浮起流程不动）
-        internal const string SelfBuildTag = "2026-09-28.12";
+        // 2026-09-28.13：34 乌恩之形"液体不减速"改用 M2Phys.setWalkXSpeed 前缀（只压
+        // consider_water_scale）；上一版改 water_speed_scale 会连浮力一起去掉，已回退
+        internal const string SelfBuildTag = "2026-09-28.13";
 
         private static bool _harmonyApplied;
         private static bool _seriousInitApplied; // 启动时是否已应用过一次布局（防止残留居中布局）
@@ -478,7 +478,6 @@ namespace KnightInCradle
                 CharmTick("2蜂群集结-蜂巢清仇恨", () => CharmEffects.ClearHiveEnemyAim());
                 CharmTick("34乌恩之形-清仇恨", () => CharmEffects.ClearUnnFriendlyAims());
                 CharmTick("34乌恩之形-蹲伏回血", () => CharmEffects.TickUnnCrouchHeal(pr));
-                CharmTick("34乌恩之形-液体不减速", () => CharmEffects.TickNoelUnnLiquidNoSlow(pr));
                 CharmTick("35骨钉大师的荣耀", () => CharmEffects.TickNoelNailMasterCharm(pr));
                 CharmTick("35圣光爆发组合键", () => CharmEffects.TickNoelBurstCombo(pr));
                 CharmTick("36编织者之歌", () => CharmEffects.TickNoelWeaversongCharm(pr));
@@ -1082,8 +1081,6 @@ namespace KnightInCradle
             // 与格林之子都在这里统一释放，否则它们的票据会留在渲染容器上继续画。
             CharmEffects.ReleaseAllNoelCharmRenderTickets();
             NoelGrimm.Stop();
-            // 护符34：还原被改过的"液体速度倍率"（骑士模式不需要它）
-            CharmEffects.RestoreNoelLiquidSpeed(pr);
             RegisterNoelPoseWhitelist(pr);
             // 骑士模式下立绘强制显示“进入战斗”姿态（EMSTATE.BATTLE），
             // 而不是静止在普通站姿；UIPicture.run 在骑士模式下被跳过，姿态保持。

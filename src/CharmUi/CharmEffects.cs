@@ -4653,61 +4653,28 @@ namespace KnightInCradle.CharmUi
 
         /// <summary>
         /// 护符34 乌恩之形 效果④（需求 2026-09-28）：**取消诺艾尔在液体里的减速惩罚**。
-        /// 做法：把诺艾尔自己的 `M2Phys.water_speed_scale`（原版 0.3333）临时改成 1，
-        /// 于是水里的水平 / 垂直移动与水中重力都不再打折；
-        /// **完全不动** `M2Phys.setWaterDunk` / `isin_water` 这套"在液体里"的状态与浮力流程，
-        /// 所以她在液体里照旧正常浮起。卸下护符 / 切小骑士时把原值还原。
+        ///
+        /// 注意：**不能**去改 `M2Phys.water_speed_scale`（那一版把浮起弄坏了）——
+        /// 这个倍率同时参与水中的**重力/浮力**计算（`M2Phys.runPhysics` 里 `num = isin_water ?
+        /// water_speed_scale : 1f` 用在重力积分上），置 1 会让她直接沉下去。
+        ///
+        /// 正确做法：只把 `M2Phys.setWalkXSpeed` 这一次调用的 `consider_water_scale` 压成 false
+        /// （原版会乘 `water_speed_scale = 1/3` 让水里走路变慢）→ **水平移动不再打折**，
+        /// 而 `water_speed_scale` 本身、水中重力与浮起流程**完全不动**。
         /// </summary>
-        public static void TickNoelUnnLiquidNoSlow(PRNoel pr)
+        private static void NoelUnnNoLiquidSlowPrefix(M2Phys __instance, ref bool consider_water_scale)
         {
             try
             {
-                if (pr == null)
+                if (!consider_water_scale || IsKnightMode || !IsEquipped(CharmOwner.Noel, UnnId))
                 {
                     return;
                 }
-                if (IsKnightMode || !IsEquipped(CharmOwner.Noel, UnnId))
+                M2Mover mv = __instance != null ? __instance.Mv : null;
+                if (mv is PRNoel)
                 {
-                    RestoreNoelLiquidSpeed(pr);
-                    return;
+                    consider_water_scale = false;
                 }
-                M2Phys phy = pr.getPhysic();
-                if (phy == null)
-                {
-                    return;
-                }
-                if (_unnWaterScaleSaved < 0f)
-                {
-                    _unnWaterScaleSaved = phy.water_speed_scale;
-                }
-                if (phy.water_speed_scale != 1f)
-                {
-                    phy.water_speed_scale = 1f;
-                }
-            }
-            catch (Exception)
-            {
-            }
-        }
-
-        /// <summary>被护符34 改过的"液体速度倍率"原值（&lt;0 = 当前没有改过）。</summary>
-        private static float _unnWaterScaleSaved = -1f;
-
-        /// <summary>把诺艾尔的"液体速度倍率"还原成原版值（切小骑士 / 卸下护符时调用）。</summary>
-        public static void RestoreNoelLiquidSpeed(PRNoel pr)
-        {
-            try
-            {
-                if (_unnWaterScaleSaved < 0f)
-                {
-                    return;
-                }
-                M2Phys phy = pr != null ? pr.getPhysic() : null;
-                if (phy != null)
-                {
-                    phy.water_speed_scale = _unnWaterScaleSaved;
-                }
-                _unnWaterScaleSaved = -1f;
             }
             catch (Exception)
             {
@@ -9490,6 +9457,20 @@ namespace KnightInCradle.CharmUi
                     {
                         KnightInCradlePlugin.PluginLog?.LogWarning(
                             "[KIC][护符34] 未找到 PR.applyWaterChokeDamage：液体溺水免疫未挂上");
+                    }
+                    // 护符34 乌恩之形 效果④（2026-09-28）：水里走路不再减速
+                    // （只压 setWalkXSpeed 的 consider_water_scale，不动 water_speed_scale / 浮力）
+                    MethodInfo setWalk = AccessTools.Method(typeof(M2Phys), "setWalkXSpeed");
+                    if (setWalk != null)
+                    {
+                        harmony.Patch(setWalk, prefix: new HarmonyMethod(
+                            typeof(CharmEffects).GetMethod(nameof(NoelUnnNoLiquidSlowPrefix),
+                                BindingFlags.Static | BindingFlags.NonPublic)));
+                    }
+                    else
+                    {
+                        KnightInCradlePlugin.PluginLog?.LogWarning(
+                            "[KIC][护符34] 未找到 M2Phys.setWalkXSpeed：液体不减速未挂上");
                     }
                     // 护符32 效果2：诺艾尔打到蘑菇 → 给 1 个满级黑棉孢子（挂蘑菇自己的 override）
                     MethodInfo mushDmg = AccessTools.Method(typeof(NelNMush), "applyDamage",
