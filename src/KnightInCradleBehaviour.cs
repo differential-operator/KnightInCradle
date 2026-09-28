@@ -21,9 +21,9 @@ namespace KnightInCradle
         /// 配合后面的 `dll=路径 (文件时间)` 可以立刻确认游戏实际加载的是哪一份 DLL。
         /// </summary>
         // 2026-09-27.42：护符槽配方标记为"已知"（CInfo.obtain_flag）→ 才会出现在炼金列表里
-        // 2026-09-28.04：会心层数文本框改为"地图像素空间"绘制（修掉 OnGUI 版整体偏左下），
-        // 并加层数变化诊断日志（前 40 条）
-        internal const string SelfBuildTag = "2026-09-28.04";
+        // 2026-09-28.05：会心层数数字改用自绘 5×7 点阵图集（不依赖字体资源），
+        // 仍画在地图空间里跟随诺艾尔；附带一次性诊断日志
+        internal const string SelfBuildTag = "2026-09-28.05";
 
         private static bool _harmonyApplied;
         private static bool _seriousInitApplied; // 启动时是否已应用过一次布局（防止残留居中布局）

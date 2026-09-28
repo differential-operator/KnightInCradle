@@ -7972,10 +7972,84 @@ namespace KnightInCradle.CharmUi
         public static int NoelHeavyBlowStacks => _heavyFocusHits;
         /// <summary>会心层数文本框：锚点相对"诺艾尔身体中心"的纵向偏移（格；y 向下为正，负值=向上）。</summary>
         private const float CritCounterOffY = -1.1f;
-        /// <summary>字形图集的字号（像素）。</summary>
-        private const int CritCounterFontPx = 64;
-        /// <summary>字形缩放：字体像素 → 地图像素（数字高度 ≈ 字号 × 本值）。</summary>
-        private const float CritCounterDigitScale = 0.15f;
+        /// <summary>点阵字模：每个数字 5×7 像素（'#' = 亮）。</summary>
+        private static readonly string[] CritDigitBitmap =
+        {
+            " ### " +
+            "#   #" +
+            "#  ##" +
+            "# # #" +
+            "##  #" +
+            "#   #" +
+            " ### ",
+            "  #  " +
+            " ##  " +
+            "  #  " +
+            "  #  " +
+            "  #  " +
+            "  #  " +
+            " ### ",
+            " ### " +
+            "#   #" +
+            "    #" +
+            "   # " +
+            "  #  " +
+            " #   " +
+            "#####",
+            "#####" +
+            "   # " +
+            "  #  " +
+            "   # " +
+            "    #" +
+            "#   #" +
+            " ### ",
+            "   # " +
+            "  ## " +
+            " # # " +
+            "#  # " +
+            "#####" +
+            "   # " +
+            "   # ",
+            "#####" +
+            "#    " +
+            "#### " +
+            "    #" +
+            "    #" +
+            "#   #" +
+            " ### ",
+            "  ## " +
+            " #   " +
+            "#    " +
+            "#### " +
+            "#   #" +
+            "#   #" +
+            " ### ",
+            "#####" +
+            "    #" +
+            "   # " +
+            "  #  " +
+            " #   " +
+            " #   " +
+            " #   ",
+            " ### " +
+            "#   #" +
+            "#   #" +
+            " ### " +
+            "#   #" +
+            "#   #" +
+            " ### ",
+            " ### " +
+            "#   #" +
+            "#   #" +
+            " ####" +
+            "    #" +
+            "   # " +
+            " ##  ",
+        };
+        /// <summary>点阵缩放：1 个字模像素 = 几个地图像素（数字高 ≈ 7 × 本值）。</summary>
+        private const float CritCounterPixelScale = 2f;
+        /// <summary>数字之间的空隙（字模像素）。</summary>
+        private const int CritCounterLetterGap = 1;
         /// <summary>需求指定颜色：#FF41CE。</summary>
         private static readonly Color32 CritCounterColor = new Color32(0xFF, 0x41, 0xCE, 0xFF);
         /// <summary>
@@ -7997,10 +8071,11 @@ namespace KnightInCradle.CharmUi
         /// <summary>蓄力光圈锚点的额外纵向偏移（格；y 向下为正，-1 = 向上 1 格）。</summary>
         private const float ChargeAuraOffY = -1f;
 
-        /// <summary>数字字形（0~9，取自动态字体图集）。</summary>
-        private static readonly CharacterInfo[] _critGlyphs = new CharacterInfo[10];
-        private static Font _critFont;
-        private static bool _critGlyphsReady;
+        /// <summary>数字点阵图集（10 个数字横排，白字，靠 mesh.Col 染色）。</summary>
+        private static Texture2D _critDigitTex;
+        private static bool _critDigitTexTried;
+        /// <summary>诊断用：计数器是否已经成功绘制过一次。</summary>
+        private static bool _critCounterDrewLogged;
         /// <summary>"会心"层数（每次击中目标 +1；受到伤害清零；可无限叠加）。</summary>
         private static int _heavyFocusHits;
         /// <summary>是否持有"会心"（层数 &gt; 0；受到伤害立即失去全部）。</summary>
@@ -8154,9 +8229,9 @@ namespace KnightInCradle.CharmUi
                 ReleaseHeavyFocusAuraTicket();
                 return;
             }
-            if (!EnsureCritGlyphs())
+            if (EnsureCritDigitTexture() == null)
             {
-                return; // 字形不可用：只是不显示，层数与伤害照常
+                return; // 图集不可用：只是不显示，层数与伤害照常
             }
             if (_heavyFocusAuraMesh != null && _heavyFocusAuraMap == mp && _heavyFocusAuraTicket != null && TicketUsable(_heavyFocusAuraTicket, _heavyFocusAuraMesh))
             {
@@ -8217,7 +8292,8 @@ namespace KnightInCradle.CharmUi
             }
             _heavyFocusAuraMesh.clearSimple();
             PRNoel pr = KnightInCradleBehaviour.GetPrPublic();
-            if (pr == null || !_critGlyphsReady || !IsCritCounterWanted(pr))
+            Texture2D digitTex = EnsureCritDigitTexture();
+            if (pr == null || digitTex == null || !IsCritCounterWanted(pr))
             {
                 MdOut = _heavyFocusAuraMesh;
                 return true;
@@ -8230,43 +8306,38 @@ namespace KnightInCradle.CharmUi
             float my = mp.pixel2uy(cy * mp.CLEN);
             Tk.Matrix = mp.gameObject.transform.localToWorldMatrix *
                         Matrix4x4.Translate(new Vector3(mx, my, 0f));
-            Texture2D fontTex = _critFont != null && _critFont.material != null
-                ? _critFont.material.mainTexture as Texture2D
-                : null;
-            if (fontTex == null)
-            {
-                MdOut = _heavyFocusAuraMesh;
-                return true;
-            }
-            _heavyFocusAuraMesh.initForImgAndTexture(fontTex);
+            _heavyFocusAuraMesh.initForImgAndTexture(digitTex);
             _heavyFocusAuraMesh.Col = CritCounterColor;
             string text = NoelHeavyBlowStacks.ToString();
-            // 先算总宽（字体像素），让数字整体相对诺艾尔居中
-            float total = 0f;
-            for (int i = 0; i < text.Length; i++)
-            {
-                total += _critGlyphs[text[i] - '0'].advance;
-            }
+            // 整体宽度（地图像素）与起始 X（居中）
+            float glyphW = CritGlyphW * CritCounterPixelScale;
+            float glyphH = CritGlyphH * CritCounterPixelScale;
+            float gap = CritCounterLetterGap * CritCounterPixelScale;
+            float total = text.Length * glyphW + (text.Length - 1) * gap;
             float pen = -total * 0.5f;
+            float uStep = CritGlyphW / (float)CritDigitAtlasW;
             for (int i = 0; i < text.Length; i++)
             {
-                CharacterInfo ci = _critGlyphs[text[i] - '0'];
-                float gw = (ci.maxX - ci.minX) * CritCounterDigitScale;
-                float gh = (ci.maxY - ci.minY) * CritCounterDigitScale;
-                if (gw > 0.0001f && gh > 0.0001f)
+                int d = text[i] - '0';
+                if (d < 0 || d > 9)
                 {
-                    // 字形 UV：AIC 的 uv_top 是"贴图顶边"坐标，Unity 的 CharacterInfo 是底边原点 → 换算一次
-                    _heavyFocusAuraMesh.uv_left = ci.uvTopLeft.x;
-                    _heavyFocusAuraMesh.uv_width = ci.uvTopRight.x - ci.uvTopLeft.x;
-                    _heavyFocusAuraMesh.uv_top = 1f - ci.uvTopLeft.y;
-                    _heavyFocusAuraMesh.uv_height = ci.uvTopLeft.y - ci.uvBottomLeft.y;
-                    // Rect 的 (x,y) 是中心：把字形左下角放在 (pen + minX, minY)
-                    _heavyFocusAuraMesh.Rect(
-                        (pen + ci.minX) * CritCounterDigitScale + gw * 0.5f,
-                        ci.minY * CritCounterDigitScale + gh * 0.5f,
-                        gw, gh, false);
+                    continue;
                 }
-                pen += ci.advance;
+                // 图集里每个数字横排一格：uv_top/uv_height 用整张图（点阵上下顶满）
+                _heavyFocusAuraMesh.uv_left = d * uStep;
+                _heavyFocusAuraMesh.uv_width = uStep;
+                _heavyFocusAuraMesh.uv_top = 0f;
+                _heavyFocusAuraMesh.uv_height = 1f;
+                // Rect 的 (x,y) 是中心：数字整体竖直居中于锚点
+                _heavyFocusAuraMesh.Rect(pen + glyphW * 0.5f, 0f, glyphW, glyphH, false);
+                pen += glyphW + gap;
+            }
+            if (!_critCounterDrewLogged)
+            {
+                _critCounterDrewLogged = true;
+                KnightInCradlePlugin.PluginLog?.LogInfo(
+                    "[KIC][沉重之击] 计数器已绘制 text=" + text + " 锚点=(" + pr.x.ToString("F2") + "," +
+                    cy.ToString("F2") + ") 数字尺寸=" + glyphW.ToString("F1") + "x" + glyphH.ToString("F1"));
             }
             MdOut = _heavyFocusAuraMesh;
             return true;
@@ -8278,40 +8349,68 @@ namespace KnightInCradle.CharmUi
             return pr != null && !IsKnightMode && IsEquipped(CharmOwner.Noel, HeavyBlowId);
         }
 
-        /// <summary>取字形（数字 0~9）：用 Unity 动态字体的字形图集 UV 直接拼四边形，不需要额外素材。</summary>
-        private static bool EnsureCritGlyphs()
+        /// <summary>点阵数字尺寸（像素）。</summary>
+        private const int CritGlyphW = 5;
+        private const int CritGlyphH = 7;
+        /// <summary>点阵图集宽度：10 个数字横排。</summary>
+        private const int CritDigitAtlasW = CritGlyphW * 10;
+
+        /// <summary>
+        /// 取数字点阵图集（懒加载一次）：5×7 白字横排，自己画进 Texture2D，
+        /// 不依赖任何字体资源（需求：只显示数字，颜色靠 mesh 染色 #FF41CE）。
+        /// </summary>
+        private static Texture2D EnsureCritDigitTexture()
         {
-            if (_critGlyphsReady)
+            if (_critDigitTex != null || _critDigitTexTried)
             {
-                return true;
+                return _critDigitTex;
             }
+            _critDigitTexTried = true;
             try
             {
-                if (_critFont == null)
+                var tex = new Texture2D(CritDigitAtlasW, CritGlyphH, TextureFormat.RGBA32, false)
                 {
-                    _critFont = Font.CreateDynamicFontFromOSFont(
-                        new[] { "Arial", "Microsoft YaHei", "Yu Gothic UI", "SimSun" }, CritCounterFontPx);
+                    filterMode = FilterMode.Point,
+                    wrapMode = TextureWrapMode.Clamp,
+                    hideFlags = HideFlags.HideAndDontSave
+                };
+                var px = new Color32[CritDigitAtlasW * CritGlyphH];
+                Color32 white = new Color32(255, 255, 255, 255);
+                Color32 clear = new Color32(255, 255, 255, 0);
+                for (int i = 0; i < px.Length; i++)
+                {
+                    px[i] = clear;
                 }
-                if (_critFont == null)
+                for (int d = 0; d < 10 && d < CritDigitBitmap.Length; d++)
                 {
-                    return false;
-                }
-                _critFont.RequestCharactersInTexture("0123456789", CritCounterFontPx, FontStyle.Bold);
-                for (int i = 0; i < 10; i++)
-                {
-                    if (!_critFont.GetCharacterInfo((char)('0' + i), out _critGlyphs[i],
-                            CritCounterFontPx, FontStyle.Bold))
+                    string bmp = CritDigitBitmap[d];
+                    for (int row = 0; row < CritGlyphH; row++)
                     {
-                        return false;
+                        for (int col = 0; col < CritGlyphW; col++)
+                        {
+                            int idx = row * CritGlyphW + col;
+                            if (idx >= bmp.Length || bmp[idx] != '#')
+                            {
+                                continue;
+                            }
+                            // Texture2D 的第 0 行在底部；字模第 0 行是"最上面一行"
+                            int x = d * CritGlyphW + col;
+                            int y = CritGlyphH - 1 - row;
+                            px[y * CritDigitAtlasW + x] = white;
+                        }
                     }
                 }
-                _critGlyphsReady = true;
-                return true;
+                tex.SetPixels32(px);
+                tex.Apply(false, false);
+                _critDigitTex = tex;
+                KnightInCradlePlugin.PluginLog?.LogInfo(
+                    "[KIC][沉重之击] 数字点阵图集已建立 " + CritDigitAtlasW + "x" + CritGlyphH);
             }
             catch (Exception)
             {
-                return false;
+                _critDigitTex = null;
             }
+            return _critDigitTex;
         }
 
         /// <summary>蓄力光圈贴图（`nail_charge_effect0005~0009`，护符33 蓄力段用）。</summary>
