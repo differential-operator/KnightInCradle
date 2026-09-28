@@ -7970,8 +7970,10 @@ namespace KnightInCradle.CharmUi
 
         /// <summary>当前"会心"层数（供跟随诺艾尔的层数文本框显示）。</summary>
         public static int NoelHeavyBlowStacks => _heavyFocusHits;
-        /// <summary>会心层数文本框：锚点相对"诺艾尔身体中心"的纵向偏移（格；y 向下为正，负值=向上）。</summary>
-        private const float CritCounterOffY = -1.1f;
+        /// <summary>会心层数文本框：锚点相对诺艾尔的水平偏移（格，正值 = 身后 1 格）。</summary>
+        private const float CritCounterBackX = 1f;
+        /// <summary>会心层数文本框：锚点相对"诺艾尔身体中心"向上的高度（格）。</summary>
+        private const float CritCounterUpY = 1.2f;
         /// <summary>点阵字模：每个数字 5×7 像素（'#' = 亮）。</summary>
         private static readonly string[] CritDigitBitmap =
         {
@@ -8298,11 +8300,13 @@ namespace KnightInCradle.CharmUi
                 MdOut = _heavyFocusAuraMesh;
                 return true;
             }
-            // 锚点 = 诺艾尔**身体中心**：`pr.mbottom` 是脚底、`pr.sizey` 是身高（格），
-            // 所以中心 = 脚底 − 身高/2（比直接用 `pr.y` 稳，AIC 里 `y` 并不总等于身体中心），
-            // 再按 `CritCounterOffY` 上移（y 向下为正，负值=向上）。
-            float cy = pr.mbottom - pr.sizey * 0.5f + CritCounterOffY;
-            float mx = mp.pixel2ux(pr.x * mp.CLEN);
+            // 锚点 = 诺艾尔身体中心 向**身后** 1 格、向**上** 1.2 格（需求 2026-09-28）。
+            // 身体中心：`pr.mbottom` 是脚底、`pr.sizey` 是身高（格），中心 = 脚底 − 身高/2；
+            // 朝向：`mpf_is_right >= 0` = 面朝右，身后即反方向。
+            float facing = pr.mpf_is_right >= 0f ? 1f : -1f;
+            float cx = pr.x - facing * CritCounterBackX;
+            float cy = NoelBodyCenterY(pr) - CritCounterUpY;
+            float mx = mp.pixel2ux(cx * mp.CLEN);
             float my = mp.pixel2uy(cy * mp.CLEN);
             Tk.Matrix = mp.gameObject.transform.localToWorldMatrix *
                         Matrix4x4.Translate(new Vector3(mx, my, 0f));
@@ -8336,7 +8340,7 @@ namespace KnightInCradle.CharmUi
             {
                 _critCounterDrewLogged = true;
                 KnightInCradlePlugin.PluginLog?.LogInfo(
-                    "[KIC][沉重之击] 计数器已绘制 text=" + text + " 锚点=(" + pr.x.ToString("F2") + "," +
+                    "[KIC][沉重之击] 计数器已绘制 text=" + text + " 锚点=(" + cx.ToString("F2") + "," +
                     cy.ToString("F2") + ") 数字尺寸=" + glyphW.ToString("F1") + "x" + glyphH.ToString("F1"));
             }
             MdOut = _heavyFocusAuraMesh;
