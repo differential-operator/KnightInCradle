@@ -26,7 +26,8 @@ namespace KnightInCradle
         internal static ConfigEntry<string> AttackKey;
         internal static ConfigEntry<string> SeriousModeKey;
         internal static ConfigEntry<string> CharmUiKey;
-        internal static ConfigEntry<string> TauntKey;
+    internal static ConfigEntry<string> TauntKey;
+    internal static ConfigEntry<string> CritStackKey;
         internal static ConfigEntry<bool> NativeBodyConfig;
         internal static ConfigEntry<float> CharmUiScale;
         internal static ConfigEntry<float> CharmUiOffsetX;
@@ -832,6 +833,8 @@ namespace KnightInCradle
             SeriousModeKey = Config.Bind("Keybinds", "SeriousMode", "Period", "认真模式开关（隐藏立绘居中，默认句号键）");
             CharmUiKey = Config.Bind("Keybinds", "CharmUi", "O", "护符 UI 开关（默认 O 键；U 是游戏自带菜单键，避免冲突）");
             TauntKey = Config.Bind("Keybinds", "Taunt", "V", "挑衅（默认 V 键，仅地面可用）");
+            CritStackKey = Config.Bind("Keybinds", "CritTestStacks", "H",
+                "快捷加会心层数（携带护符16 沉重之击时，按一次直接 +100 层；默认 H 键）");
             // 方案A：骑士普通地面移动（走/停）交给诺艾尔原生物理执行，骑士只做读回。
             // 斜坡/墙角/进门都由 AIC 原生 M2Mover 碰撞求解，解决“过图被卡回原房间”
             // 与“墙角穿模”两类问题；空中动作/冲刺等复杂状态暂保留旧路径。

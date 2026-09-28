@@ -7974,6 +7974,27 @@ namespace KnightInCradle.CharmUi
 
         /// <summary>当前"会心"层数（供跟随诺艾尔的层数文本框显示）。</summary>
         public static int NoelHeavyBlowStacks => _heavyFocusHits;
+
+        /// <summary>
+        /// 快捷键：携带护符16 沉重之击时，直接加 `count` 层"会心"（需求 2026-09-28，方便测试）。
+        /// 只在诺艾尔模式 + 已装备时生效。
+        /// </summary>
+        public static void AddNoelHeavyBlowStacks(int count)
+        {
+            try
+            {
+                if (count <= 0 || IsKnightMode || !IsEquipped(CharmOwner.Noel, HeavyBlowId))
+                {
+                    return;
+                }
+                _heavyFocusHits += count;
+                _heavyFocusActive = true;
+                LogCritCounter("快捷键+" + count);
+            }
+            catch (Exception)
+            {
+            }
+        }
         /// <summary>会心层数文本框：锚点相对诺艾尔的水平偏移（格，正值 = 身后 1 格）。</summary>
         private const float CritCounterBackX = 1f;
         /// <summary>会心层数文本框：锚点相对"诺艾尔身体中心"向上的高度（格）。</summary>

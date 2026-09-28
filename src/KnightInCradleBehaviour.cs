@@ -21,8 +21,8 @@ namespace KnightInCradle
         /// 配合后面的 `dll=路径 (文件时间)` 可以立刻确认游戏实际加载的是哪一份 DLL。
         /// </summary>
         // 2026-09-27.42：护符槽配方标记为"已知"（CInfo.obtain_flag）→ 才会出现在炼金列表里
-        // 2026-09-28.07：打中靶子/拳炮/路障等非魔物目标也计"会心"层数
-        internal const string SelfBuildTag = "2026-09-28.07";
+        // 2026-09-28.08：新增快捷键（默认 H，可在 cfg 改）——携带护符16 时按一次 +100 层"会心"
+        internal const string SelfBuildTag = "2026-09-28.08";
 
         private static bool _harmonyApplied;
         private static bool _seriousInitApplied; // 启动时是否已应用过一次布局（防止残留居中布局）
@@ -134,6 +134,12 @@ namespace KnightInCradle
             if (UnityEngine.Input.GetKeyDown(charmUiToggleKey))
             {
                 ToggleCharmUi();
+            }
+
+            // “H”键（可配置）：携带护符16 沉重之击时直接 +100 层"会心"（方便测试）
+            if (KeyConfig.GetPressed(KnightInCradlePlugin.CritStackKey, KeyCode.H))
+            {
+                CharmEffects.AddNoelHeavyBlowStacks(100);
             }
 
             // 护符 UI 每帧驱动：刷新坐姿状态；编辑对象离开对应模式时自动关闭
