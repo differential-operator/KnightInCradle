@@ -21,8 +21,9 @@ namespace KnightInCradle
         /// 配合后面的 `dll=路径 (文件时间)` 可以立刻确认游戏实际加载的是哪一份 DLL。
         /// </summary>
         // 2026-09-27.42：护符槽配方标记为"已知"（CInfo.obtain_flag）→ 才会出现在炼金列表里
-        // 2026-09-27.55：10 蜕变挽歌（诺艾尔侧）剑气取消 8 格射程限制，改成飞出房间才清掉（同小骑士）
-        internal const string SelfBuildTag = "2026-09-27.55";
+        // 2026-09-28.01：16 沉重之击改为"击中叠会心（每层 +8%，无限叠加），受伤失去全部"
+        // （取消原来的"连击 5 次进入会心 / 未命中清空"）
+        internal const string SelfBuildTag = "2026-09-28.01";
 
         private static bool _harmonyApplied;
         private static bool _seriousInitApplied; // 启动时是否已应用过一次布局（防止残留居中布局）
