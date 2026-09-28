@@ -5267,6 +5267,8 @@ namespace KnightInCradle.CharmUi
                 atk.AttackFrom = pr;
                 atk.PublishMagic = _lastNoelNailMg;
                 atk.CenterXy(a.x, a.y, 0f);
+                // 护符16 沉重之击：打中"非魔物目标"（靶子/拳炮/路障）同样算一次击中 → +1 层
+                ResolveHeavyFocusHit();
                 a.applyHpDamage(dmg, true, atk);
                 return true;
             }
@@ -5677,6 +5679,8 @@ namespace KnightInCradle.CharmUi
                 atk.AttackFrom = pr;
                 atk.PublishMagic = _lastNoelNailMg;
                 atk.CenterXy(a.x, a.y, 0f);
+                // 护符16 沉重之击：打中"非魔物目标"（靶子/拳炮/路障）同样算一次击中 → +1 层
+                ResolveHeavyFocusHit();
                 a.applyHpDamage(dmg, true, atk);
                 return true;
             }
