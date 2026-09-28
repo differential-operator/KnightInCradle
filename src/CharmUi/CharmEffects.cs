@@ -4652,6 +4652,69 @@ namespace KnightInCradle.CharmUi
         }
 
         /// <summary>
+        /// 护符34 乌恩之形 效果④（需求 2026-09-28）：**取消诺艾尔在液体里的减速惩罚**。
+        /// 做法：把诺艾尔自己的 `M2Phys.water_speed_scale`（原版 0.3333）临时改成 1，
+        /// 于是水里的水平 / 垂直移动与水中重力都不再打折；
+        /// **完全不动** `M2Phys.setWaterDunk` / `isin_water` 这套"在液体里"的状态与浮力流程，
+        /// 所以她在液体里照旧正常浮起。卸下护符 / 切小骑士时把原值还原。
+        /// </summary>
+        public static void TickNoelUnnLiquidNoSlow(PRNoel pr)
+        {
+            try
+            {
+                if (pr == null)
+                {
+                    return;
+                }
+                if (IsKnightMode || !IsEquipped(CharmOwner.Noel, UnnId))
+                {
+                    RestoreNoelLiquidSpeed(pr);
+                    return;
+                }
+                M2Phys phy = pr.getPhysic();
+                if (phy == null)
+                {
+                    return;
+                }
+                if (_unnWaterScaleSaved < 0f)
+                {
+                    _unnWaterScaleSaved = phy.water_speed_scale;
+                }
+                if (phy.water_speed_scale != 1f)
+                {
+                    phy.water_speed_scale = 1f;
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>被护符34 改过的"液体速度倍率"原值（&lt;0 = 当前没有改过）。</summary>
+        private static float _unnWaterScaleSaved = -1f;
+
+        /// <summary>把诺艾尔的"液体速度倍率"还原成原版值（切小骑士 / 卸下护符时调用）。</summary>
+        public static void RestoreNoelLiquidSpeed(PRNoel pr)
+        {
+            try
+            {
+                if (_unnWaterScaleSaved < 0f)
+                {
+                    return;
+                }
+                M2Phys phy = pr != null ? pr.getPhysic() : null;
+                if (phy != null)
+                {
+                    phy.water_speed_scale = _unnWaterScaleSaved;
+                }
+                _unnWaterScaleSaved = -1f;
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>
         /// 效果3（追加 2026-09-25）：蹲下 / 爬行时**持续回复生命值**，默认 5 HP/秒。
         ///
         /// 回血同样走 AIC 原生的 `PR.cureHp` —— 佩戴乔尼的祝福时它会被改写成回魔
