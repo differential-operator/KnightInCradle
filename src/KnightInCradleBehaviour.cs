@@ -21,10 +21,9 @@ namespace KnightInCradle
         /// 配合后面的 `dll=路径 (文件时间)` 可以立刻确认游戏实际加载的是哪一份 DLL。
         /// </summary>
         // 2026-09-27.42：护符槽配方标记为"已知"（CInfo.obtain_flag）→ 才会出现在炼金列表里
-        // 2026-09-29.01：18 修长之钉重做 —— 单点法术键 → magic_hold 动作 + 骨剑突刺
-        // （30 格/秒前冲 0.3s 减速到 0 → 对称收回 0.3s；期间锁输入，被魔物打会中断；
-        //  范围内目标 40 真伤、每 0.1 秒再一次）。原"加长近战"效果移除（19 骄傲印记保留）。
-        internal const string SelfBuildTag = "2026-09-29.01";
+        // 2026-09-29.02：骨剑贴图缺失修复（bone_nail_left/right 已随插件素材部署）；
+        // 贴图缺失日志改为通用标签
+        internal const string SelfBuildTag = "2026-09-29.02";
 
         private static bool _harmonyApplied;
         private static bool _seriousInitApplied; // 启动时是否已应用过一次布局（防止残留居中布局）

@@ -11715,7 +11715,7 @@ namespace KnightInCradle.CharmUi
                     "hk", "sprites", spriteName + ".png");
                 if (!System.IO.File.Exists(path))
                 {
-                    KnightInCradlePlugin.PluginLog?.LogWarning("[KIC][锋利之影] 找不到贴图：" + path);
+                    KnightInCradlePlugin.PluginLog?.LogWarning("[KIC] 找不到贴图：" + path);
                     return null;
                 }
                 var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
