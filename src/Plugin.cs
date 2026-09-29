@@ -28,6 +28,10 @@ namespace KnightInCradle
         internal static ConfigEntry<string> CharmUiKey;
     internal static ConfigEntry<string> TauntKey;
     internal static ConfigEntry<string> CritStackKey;
+    // ---- 护符18 修长之钉（2026-09-29 重做：单点法术键 → 骨剑突刺）----
+    internal static ConfigEntry<float> BoneNailScaleConfig;
+    internal static ConfigEntry<float> BoneNailOffXConfig;
+    internal static ConfigEntry<float> BoneNailOffYConfig;
         internal static ConfigEntry<bool> NativeBodyConfig;
         internal static ConfigEntry<float> CharmUiScale;
         internal static ConfigEntry<float> CharmUiOffsetX;
@@ -835,6 +839,12 @@ namespace KnightInCradle
             TauntKey = Config.Bind("Keybinds", "Taunt", "V", "挑衅（默认 V 键，仅地面可用）");
             CritStackKey = Config.Bind("Keybinds", "CritTestStacks", "H",
                 "快捷加会心层数（携带护符16 沉重之击时，按一次直接 +100 层；默认 H 键）");
+            BoneNailScaleConfig = Config.Bind("Charm18", "BoneNailScale", 0.3f,
+                "护符18 修长之钉：骨剑渲染缩放（相对贴图原始像素）");
+            BoneNailOffXConfig = Config.Bind("Charm18", "BoneNailOffX", 0f,
+                "护符18：骨剑渲染水平偏移（格，正值向右）");
+            BoneNailOffYConfig = Config.Bind("Charm18", "BoneNailOffY", 0f,
+                "护符18：骨剑渲染垂直偏移（格，正值向下）");
             // 方案A：骑士普通地面移动（走/停）交给诺艾尔原生物理执行，骑士只做读回。
             // 斜坡/墙角/进门都由 AIC 原生 M2Mover 碰撞求解，解决“过图被卡回原房间”
             // 与“墙角穿模”两类问题；空中动作/冲刺等复杂状态暂保留旧路径。

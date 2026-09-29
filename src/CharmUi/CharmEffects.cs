@@ -1271,6 +1271,7 @@ namespace KnightInCradle.CharmUi
             try { ReleaseNoelShadowDashBurstTicket(); } catch (Exception) { }
             try { ReleaseNoelShadowTicket(); } catch (Exception) { }
             try { ReleaseNoelFuryGlowTicket(); } catch (Exception) { }
+            try { ReleaseBoneNailTicket(); } catch (Exception) { }
             _noelTicketRendererSeen = null;
         }
 
@@ -1291,6 +1292,7 @@ namespace KnightInCradle.CharmUi
             _shadowDashBurstMap = null;
             _noelShadowMap = null;
             _noelFuryGlowMap = null;
+            _boneNailMap = null;
         }
 
         private static int NoelEnemyOverlapMask()
@@ -7183,23 +7185,396 @@ namespace KnightInCradle.CharmUi
             return kind == MGKIND.PR_PUNCH || kind == MGKIND.PR_SHOTGUN;
         }
 
-        /// <summary>是否佩戴了"加长近战"类护符（18 修长之钉 / 19 骄傲印记）。</summary>
-        private static bool HasReachCharm()
+        /// <summary>
+        /// ================= 护符18 修长之钉（2026-09-29 重做：单点法术键 → 骨剑突刺） =================
+        ///
+        /// 佩戴后**单点法术键**（与长按区分：按住不超过 `BoneNailTapMaxSeconds`）：
+        /// ① 播放诺艾尔自己的咏唱动作 `magic_hold`；
+        /// ② 从她身体中心向前发射一根骨剑贴图（朝左 `bone_nail_left` / 朝右 `bone_nail_right`），
+        ///    初速 `BoneNailSpeed` 格/秒，`BoneNailOutTime` 秒内线性减到 0，再**对称收回**（同样 0.3 秒），
+        ///    整套 `BoneNailTotalTime` 秒，结束后清除骨剑图片；
+        /// ③ 这 0.6 秒内禁止诺艾尔的键位输入（移动/跳跃/攻击/法术），
+        ///    但**被魔物攻击**（HP 掉了）会立刻中断、解锁输入；
+        /// ④ 骨剑判定半径内的目标受 `BoneNailDamage` 真伤，**每停留 `BoneNailHitInterval` 秒再吃一次**。
+        /// </summary>
+        public const float BoneNailTapMaxSeconds = 0.25f;
+        public const float BoneNailOutTime = 0.3f;
+        public const float BoneNailTotalTime = 0.6f;
+        public const float BoneNailSpeed = 30f;
+        public const float BoneNailHitRadius = 0.9f;
+        public const float BoneNailHitInterval = 0.1f;
+        public const int BoneNailDamage = 40;
+        /// <summary>骨剑姿势（诺艾尔自身的咏唱动作名）。</summary>
+        public const string BoneNailPose = "magic_hold";
+        /// <summary>骨剑贴图名（assets/hk/sprites/&lt;name&gt;.png）。</summary>
+        public const string BoneNailSpriteLeft = "bone_nail_left";
+        public const string BoneNailSpriteRight = "bone_nail_right";
+
+        private static bool _boneNailActive;
+        private static float _boneNailT;
+        private static float _boneNailPosX;
+        private static float _boneNailPosY;
+        private static float _boneNailDir = 1f;
+        private static int _boneNailHpAtStart;
+        private static float _boneNailMagicHold;
+        private static bool _boneNailMagicWasHeld;
+        private static readonly Dictionary<NelEnemy, float> _boneNailNextHit =
+            new Dictionary<NelEnemy, float>();
+        private static readonly Dictionary<object, float> _boneNailNextHitGeneric =
+            new Dictionary<object, float>();
+        private static Texture2D _boneNailTexLeft;
+        private static Texture2D _boneNailTexRight;
+        private static MeshDrawer _boneNailMesh;
+        private static Material _boneNailMat;
+        private static M2RenderTicket _boneNailTicket;
+        private static Map2d _boneNailMap;
+
+        /// <summary>骨剑突刺是否正在进行（输入锁 / 姿势覆盖要看它）。</summary>
+        public static bool NoelBoneNailActive => _boneNailActive;
+
+        /// <summary>
+        /// 骨剑相对诺艾尔身体中心的**前向位移**（格）：
+        /// 前 0.3 秒 v = 30(1-u) 积分 → 最远 4.5 格；后 0.3 秒按 u² 对称收回（末速同为 30）。
+        /// </summary>
+        private static float BoneNailOffset(float t)
         {
-            return IsEquipped(CharmOwner.Noel, LongNailId) || IsEquipped(CharmOwner.Noel, PrideId);
+            float maxD = BoneNailSpeed * BoneNailOutTime * 0.5f;
+            if (t <= BoneNailOutTime)
+            {
+                float u = Mathf.Clamp01(t / BoneNailOutTime);
+                return BoneNailSpeed * BoneNailOutTime * (u - 0.5f * u * u);
+            }
+            float u2 = Mathf.Clamp01((t - BoneNailOutTime) / (BoneNailTotalTime - BoneNailOutTime));
+            return maxD * (1f - u2 * u2);
+        }
+
+        private static void StartBoneNail(PRNoel pr)
+        {
+            try
+            {
+                _boneNailActive = true;
+                _boneNailT = 0f;
+                _boneNailDir = pr.mpf_is_right >= 0f ? 1f : -1f;
+                _boneNailPosX = pr.x;
+                _boneNailPosY = NoelBodyCenterY(pr);
+                _boneNailHpAtStart = PrHpField != null ? (int)PrHpField.GetValue(pr) : 0;
+                _boneNailNextHit.Clear();
+                _boneNailNextHitGeneric.Clear();
+                // 单点：把正在蓄力的魔法收掉（不弹法术选择、也不发射纯白之箭）
+                try
+                {
+                    if (pr.Skill != null)
+                    {
+                        pr.Skill.killHoldMagic(false, false, false);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void EndBoneNail()
+        {
+            _boneNailActive = false;
+            _boneNailT = 0f;
+            _boneNailNextHit.Clear();
+            _boneNailNextHitGeneric.Clear();
+            ReleaseBoneNailTicket();
+        }
+
+        /// <summary>每帧推进（诺艾尔模式调用）：单点检测 → 动作推进 → 判定 → 票据维护。</summary>
+        public static void TickNoelBoneNailCharm(PRNoel pr)
+        {
+            try
+            {
+                if (pr == null || IsKnightMode || !IsEquipped(CharmOwner.Noel, LongNailId))
+                {
+                    if (_boneNailActive)
+                    {
+                        EndBoneNail();
+                    }
+                    _boneNailMagicHold = 0f;
+                    _boneNailMagicWasHeld = false;
+                    return;
+                }
+                float dt = Time.deltaTime;
+                // ---- 单点 / 长按区分：按住不超过 BoneNailTapMaxSeconds 再松开算单点 ----
+                bool held = NoelMagicKeyHeldByGame() ||
+                            KeyConfig.GetHeld(KnightInCradlePlugin.NailMasterBurstComboMagicKey, KeyCode.X);
+                if (held)
+                {
+                    if (!_boneNailMagicWasHeld)
+                    {
+                        _boneNailMagicWasHeld = true;
+                        _boneNailMagicHold = 0f;
+                    }
+                    _boneNailMagicHold += dt;
+                }
+                else
+                {
+                    if (_boneNailMagicWasHeld && _boneNailMagicHold <= BoneNailTapMaxSeconds &&
+                        !_boneNailActive)
+                    {
+                        StartBoneNail(pr);
+                    }
+                    _boneNailMagicWasHeld = false;
+                    _boneNailMagicHold = 0f;
+                }
+                if (!_boneNailActive)
+                {
+                    return;
+                }
+                // ---- 被魔物攻击（HP 下降）→ 立刻中断，解锁输入 ----
+                if (PrHpField != null)
+                {
+                    int hp = (int)PrHpField.GetValue(pr);
+                    if (hp < _boneNailHpAtStart || hp <= 0 || !pr.is_alive)
+                    {
+                        EndBoneNail();
+                        return;
+                    }
+                }
+                _boneNailT += dt;
+                if (_boneNailT >= BoneNailTotalTime)
+                {
+                    EndBoneNail();
+                    return;
+                }
+                // 位置 = 诺艾尔身体中心 + 朝向前方的位移（跟着她走，收回也回到她身上）
+                float off = BoneNailOffset(_boneNailT);
+                _boneNailPosX = pr.x + _boneNailDir * off;
+                _boneNailPosY = NoelBodyCenterY(pr);
+                CheckBoneNailHits(pr);
+                EnsureBoneNailTicket(pr, true);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>骨剑判定：范围内目标每 0.1 秒吃一次 40 真伤（同一目标在范围内持续受伤）。</summary>
+        private static void CheckBoneNailHits(PRNoel pr)
+        {
+            try
+            {
+                Map2d mp = pr.Mp;
+                if (mp == null || mp.gameObject == null)
+                {
+                    return;
+                }
+                int mask = NoelEnemyOverlapMask();
+                if (mask == 0)
+                {
+                    return;
+                }
+                Vector2 center = mp.gameObject.transform.TransformPoint(new Vector2(
+                    mp.pixel2ux(_boneNailPosX * mp.CLEN), mp.pixel2uy(_boneNailPosY * mp.CLEN)));
+                Collider2D[] hits = Physics2D.OverlapCircleAll(center, BoneNailHitRadius, mask);
+                if (hits == null)
+                {
+                    return;
+                }
+                float now = Time.time;
+                for (int i = 0; i < hits.Length; i++)
+                {
+                    Collider2D c = hits[i];
+                    if (c == null)
+                    {
+                        continue;
+                    }
+                    NelEnemy enemy = c.GetComponentInParent<NelEnemy>();
+                    if (enemy == null)
+                    {
+                        // 非魔物目标（靶子/拳炮/路障）：同样的"每 0.1 秒一次"
+                        TryDamageGenericTargetNoel(c, pr, BoneNailDamage, _boneNailNextHitGeneric,
+                            now, BoneNailHitInterval);
+                        continue;
+                    }
+                    if (!enemy.is_alive || IsEnemySummoning(enemy))
+                    {
+                        continue;
+                    }
+                    float tNext;
+                    if (_boneNailNextHit.TryGetValue(enemy, out tNext) && now < tNext)
+                    {
+                        continue;
+                    }
+                    _boneNailNextHit[enemy] = now + BoneNailHitInterval;
+                    ApplyBoneNailDamage(pr, enemy);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void ApplyBoneNailDamage(PRNoel pr, NelEnemy enemy)
+        {
+            try
+            {
+                var atk = new NelAttackInfo();
+                atk.fix_damage = true;
+                atk.Caster = pr;
+                atk.AttackFrom = pr;
+                atk.hpdmg0 = BoneNailDamage;
+                atk.hpdmg_current = BoneNailDamage;
+                atk._apply_knockback_current = true;
+                atk.PublishMagic = _lastNoelNailMg;
+                atk.CenterXy(enemy.x, enemy.y, 0f);
+                ResolveHeavyFocusHit(); // 护符16：骨剑命中同样叠"会心"
+                enemy.applyDamage(atk, false);
+                try
+                {
+                    DashAudio.PlayEnemyHit();
+                }
+                catch (Exception)
+                {
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>骨剑票据：绑当前地图的 MovRenderer，画在诺艾尔身前层 PR1。</summary>
+        private static void EnsureBoneNailTicket(PRNoel pr, bool want)
+        {
+            Map2d mp = pr != null ? pr.Mp : null;
+            if (mp == null)
+            {
+                return;
+            }
+            if (!want)
+            {
+                ReleaseBoneNailTicket();
+                return;
+            }
+            if (_boneNailTexLeft == null)
+            {
+                _boneNailTexLeft = LoadSpriteTexture(BoneNailSpriteLeft);
+            }
+            if (_boneNailTexRight == null)
+            {
+                _boneNailTexRight = LoadSpriteTexture(BoneNailSpriteRight);
+            }
+            if (_boneNailTexLeft == null || _boneNailTexRight == null)
+            {
+                return; // 素材缺失：只是不显示，判定照旧
+            }
+            if (_boneNailMesh != null && _boneNailMap == mp && _boneNailTicket != null &&
+                TicketUsable(_boneNailTicket, _boneNailMesh))
+            {
+                return;
+            }
+            ReleaseBoneNailTicket();
+            _boneNailMap = mp;
+            _boneNailMesh = new MeshDrawer(null, 4, 6);
+            _boneNailMesh.draw_gl_only = true;
+            _boneNailMat = MTRX.newMtr(MTRX.ShaderGDT);
+            _boneNailMat.EnableKeyword("NO_PIXELSNAP");
+            _boneNailMesh.activate("noel_bone_nail", _boneNailMat, false, MTRX.ColWhite, null);
+            _boneNailTicket = mp.MovRenderer.assignDrawable(
+                M2Mover.DRAW_ORDER.PR1, null, PrepareBoneNailMesh, _boneNailMesh, null, null);
+        }
+
+        private static void ReleaseBoneNailTicket()
+        {
+            try
+            {
+                if (_boneNailTicket != null && _boneNailMap != null &&
+                    _boneNailMap.MovRenderer != null)
+                {
+                    _boneNailMap.MovRenderer.deassignDrawable(_boneNailTicket, -1);
+                }
+            }
+            catch (Exception)
+            {
+            }
+            try
+            {
+                if (_boneNailMat != null)
+                {
+                    IN.DestroyOne(_boneNailMat);
+                }
+            }
+            catch (Exception)
+            {
+            }
+            _boneNailTicket = null;
+            _boneNailMesh = null;
+            _boneNailMat = null;
+            _boneNailMap = null;
+        }
+
+        /// <summary>骨剑绘制：锚定骨剑当前位置，按朝向选左右贴图。</summary>
+        private static bool PrepareBoneNailMesh(Camera Cam, M2RenderTicket Tk, bool need_redraw, int draw_id,
+            out MeshDrawer MdOut, ref bool color_one_overwrite)
+        {
+            MdOut = null;
+            Map2d mp = _boneNailMap;
+            if (mp == null || _boneNailMesh == null || draw_id != 0)
+            {
+                return false;
+            }
+            _boneNailMesh.clearSimple();
+            if (!_boneNailActive)
+            {
+                MdOut = _boneNailMesh;
+                return true;
+            }
+            Texture2D tex = _boneNailDir < 0f ? _boneNailTexLeft : _boneNailTexRight;
+            if (tex == null)
+            {
+                MdOut = _boneNailMesh;
+                return true;
+            }
+            Tk.Matrix = mp.gameObject.transform.localToWorldMatrix *
+                        Matrix4x4.Translate(new Vector3(
+                            mp.pixel2ux(_boneNailPosX * mp.CLEN),
+                            mp.pixel2uy(_boneNailPosY * mp.CLEN), 0f));
+            float scale = KnightInCradlePlugin.BoneNailScaleConfig != null
+                ? KnightInCradlePlugin.BoneNailScaleConfig.Value
+                : 0.3f;
+            float offX = KnightInCradlePlugin.BoneNailOffXConfig != null
+                ? KnightInCradlePlugin.BoneNailOffXConfig.Value
+                : 0f;
+            float offY = KnightInCradlePlugin.BoneNailOffYConfig != null
+                ? KnightInCradlePlugin.BoneNailOffYConfig.Value
+                : 0f;
+            float w = tex.width * scale;
+            float h = tex.height * scale;
+            _boneNailMesh.Col = MTRX.ColWhite;
+            _boneNailMesh.initForImgAndTexture(tex);
+            _boneNailMesh.uv_top = 0f;
+            _boneNailMesh.uv_height = 1f;
+            _boneNailMesh.uv_left = 0f;
+            _boneNailMesh.uv_width = 1f;
+            _boneNailMesh.Rect(offX * mp.CLEN, offY * mp.CLEN, w, h, false);
+            MdOut = _boneNailMesh;
+            return true;
         }
 
         /// <summary>
-        /// 近战距离总倍率：修长之钉（默认 +25%）与骄傲印记（默认 +35%）**百分比相加**，
-        /// 只算实际佩戴的那几个（同时佩戴 = +60%）。
+        /// 是否佩戴了"加长近战"类护符。
+        /// 需求 2026-09-29：18 修长之钉**改成骨剑突刺**（单点法术键），不再提供近战距离加成，
+        /// 所以这条只认 19 骄傲印记。
+        /// </summary>
+        private static bool HasReachCharm()
+        {
+            return IsEquipped(CharmOwner.Noel, PrideId);
+        }
+
+        /// <summary>
+        /// 近战距离总倍率：现在只有 19 骄傲印记（默认 +35%）参与
+        /// （18 修长之钉 已改成骨剑突刺，不再加距离）。
         /// </summary>
         private static float NoelMeleeReachMult()
         {
             float bonus = 0f;
-            if (IsEquipped(CharmOwner.Noel, LongNailId))
-            {
-                bonus += KnightInCradlePlugin.LongNailReachMult - 1f;
-            }
             if (IsEquipped(CharmOwner.Noel, PrideId))
             {
                 bonus += KnightInCradlePlugin.PrideReachPercent / 100f;
@@ -10507,6 +10882,14 @@ namespace KnightInCradle.CharmUi
                     __result = false;
                     return false;
                 }
+                // 护符18 骨剑突刺（需求 2026-09-29）：这 0.6 秒内锁掉移动/跳跃/攻击/法术
+                // （被魔物攻击时技能会提前中断，锁也随之解除）
+                if (_boneNailActive && (isDirection || isJump ||
+                                        key == KEY.SIMKEY.Z || key == KEY.SIMKEY.X))
+                {
+                    __result = false;
+                    return false;
+                }
                 // 护符35：**魔法键锁掉**（需求1）
                 if (NailMasterEquipped && key == KEY.SIMKEY.X)
                 {
@@ -10901,6 +11284,12 @@ namespace KnightInCradle.CharmUi
                 // 护符35 旋风斩：起手 / 循环 / 收尾三个动作名接管姿势
                 if (__instance != null && __instance.Pr is PRNoel)
                 {
+                    // 护符18 修长之钉：骨剑突刺期间播放诺艾尔自己的咏唱动作 magic_hold
+                    if (_boneNailActive)
+                    {
+                        title = BoneNailPose;
+                        return;
+                    }
                     string nmPose = NailMasterPoseName();
                     if (!string.IsNullOrEmpty(nmPose))
                     {
