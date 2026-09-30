@@ -4654,6 +4654,36 @@ namespace KnightInCradle.CharmUi
         }
 
         /// <summary>
+        /// 护符15 稳定之体 效果②（需求 2026-09-30）：**诺艾尔攻击命中魔物后不再产生后坐力**。
+        ///
+        /// AIC 里"攻击命中"的反作用力走 `M2Attackable.addKnockbackVelocity`：
+        /// `MGContainer` 命中后调 `attacker.addKnockBack(target, Atk, …)`，其中会对攻守双方各施加一次位移，
+        /// 攻方那一次就是后坐力。这里判断这一发的 `Atk.Caster / AttackFrom` 是不是诺艾尔自己 ——
+        /// 是（= 她在打怪）就把给她那段位移作废；被魔物打飞时 `Caster` 是魔物，因此照旧生效。
+        /// </summary>
+        private static bool StableNoRecoilPrefix(M2Attackable __instance, AttackInfo Atk)
+        {
+            try
+            {
+                if (IsKnightMode || !(__instance is PRNoel noel) || Atk == null ||
+                    !IsEquipped(CharmOwner.Noel, StableId))
+                {
+                    return true;
+                }
+                // 形参类型是基类 `AttackInfo`，出手者字段在 `NelAttackInfo` 上（同护符20 的写法）
+                NelAttackInfo nAtk = Atk as NelAttackInfo;
+                bool selfCaused = nAtk != null &&
+                                  (ReferenceEquals(nAtk.Caster, noel) ||
+                                   ReferenceEquals(nAtk.AttackFrom, noel));
+                return !selfCaused;
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+        }
+
+        /// <summary>
         /// 护符34 乌恩之形 效果④（需求 2026-09-28）：**取消诺艾尔在液体里的减速惩罚**。
         ///
         /// 注意：**不能**去改 `M2Phys.water_speed_scale`（那一版把浮起弄坏了）——
@@ -10135,6 +10165,19 @@ namespace KnightInCradle.CharmUi
                     {
                         KnightInCradlePlugin.PluginLog?.LogWarning(
                             "[KIC][护符34] 未找到 M2Phys.setWalkXSpeed：液体不减速未挂上");
+                    }
+                    // 护符15 稳定之体（2026-09-30）：自己打中魔物后不再产生后坐力
+                    MethodInfo knockbackVel = AccessTools.Method(typeof(M2Attackable), "addKnockbackVelocity");
+                    if (knockbackVel != null)
+                    {
+                        harmony.Patch(knockbackVel, prefix: new HarmonyMethod(
+                            typeof(CharmEffects).GetMethod(nameof(StableNoRecoilPrefix),
+                                BindingFlags.Static | BindingFlags.NonPublic)));
+                    }
+                    else
+                    {
+                        KnightInCradlePlugin.PluginLog?.LogWarning(
+                            "[KIC][护符15] 未找到 M2Attackable.addKnockbackVelocity：后坐力免疫未挂上");
                     }
                     // 护符32 效果2：诺艾尔打到蘑菇 → 给 1 个满级黑棉孢子（挂蘑菇自己的 override）
                     MethodInfo mushDmg = AccessTools.Method(typeof(NelNMush), "applyDamage",
