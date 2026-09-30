@@ -7220,6 +7220,8 @@ namespace KnightInCradle.CharmUi
         public const float BoneNailHitRadius = 0.9f;
         public const float BoneNailHitInterval = 0.1f;
         public const int BoneNailDamage = 40;
+        /// <summary>释放骨剑消耗的 MP（需求 2026-09-30）。MP 不足时不释放。</summary>
+        public const int BoneNailMpCost = 40;
         /// <summary>骨剑姿势（诺艾尔自身的咏唱动作名）。</summary>
         public const string BoneNailPose = "magic_hold";
         /// <summary>骨剑贴图名（assets/hk/sprites/&lt;name&gt;.png）。</summary>
@@ -7263,10 +7265,23 @@ namespace KnightInCradle.CharmUi
             return BoneNailSpeed * BoneNailOutTime * (u - 0.5f * u * u);
         }
 
-        private static void StartBoneNail(PRNoel pr)
+        /// <summary>起手骨剑：先扣 MP（不足则不放），再进入动作状态。返回是否真的放出去了。</summary>
+        private static bool StartBoneNail(PRNoel pr)
         {
             try
             {
+                // 需求 2026-09-30：使用该技能消耗 `BoneNailMpCost` MP；不够就整体不释放
+                if (BoneNailMpCost > 0)
+                {
+                    int mp = pr != null ? Mathf.FloorToInt(pr.get_mp()) : 0;
+                    if (mp < BoneNailMpCost)
+                    {
+                        LogBoneNail("MP 不足（" + mp + " < " + BoneNailMpCost + "）→ 不释放");
+                        return false;
+                    }
+                    pr.applyMpDamage(BoneNailMpCost, true, null, false, false);
+                    RefreshNoelHudMp();
+                }
                 _boneNailActive = true;
                 _boneNailLocking = true;
                 _boneNailT = 0f;
@@ -7290,9 +7305,11 @@ namespace KnightInCradle.CharmUi
                 catch (Exception)
                 {
                 }
+                return true;
             }
             catch (Exception)
             {
+                return false;
             }
         }
 
