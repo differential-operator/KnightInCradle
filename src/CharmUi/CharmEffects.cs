@@ -7251,6 +7251,12 @@ namespace KnightInCradle.CharmUi
         private static Material _boneNailMat;
         private static M2RenderTicket _boneNailTicket;
         private static Map2d _boneNailMap;
+        // ---- 需求 2026-09-30：用绿框标出骨剑的碰撞箱（判定圆）----
+        private static Texture2D _boneNailDbgTex;
+        private static MeshDrawer _boneNailDbgMesh;
+        private static Material _boneNailDbgMat;
+        private static M2RenderTicket _boneNailDbgTicket;
+        private static Map2d _boneNailDbgMap;
 
         /// <summary>骨剑突刺是否正在进行（输入锁 / 姿势覆盖要看它）。</summary>
         public static bool NoelBoneNailActive => _boneNailActive;
@@ -7611,10 +7617,51 @@ namespace KnightInCradle.CharmUi
             _boneNailMesh.activate("noel_bone_nail", _boneNailMat, false, MTRX.ColWhite, null);
             _boneNailTicket = mp.MovRenderer.assignDrawable(
                 M2Mover.DRAW_ORDER.PR1, null, PrepareBoneNailMesh, _boneNailMesh, null, null);
+            // 绿框：骨剑判定圆（半径 BoneNailHitRadius）
+            if (_boneNailDbgTex == null)
+            {
+                _boneNailDbgTex = MakeRingTexture(64, 0.12f);
+            }
+            if (_boneNailDbgTex != null)
+            {
+                _boneNailDbgMap = mp;
+                _boneNailDbgMesh = new MeshDrawer(null, 4, 6);
+                _boneNailDbgMesh.draw_gl_only = true;
+                _boneNailDbgMat = MTRX.newMtr(MTRX.ShaderGDT);
+                _boneNailDbgMat.EnableKeyword("NO_PIXELSNAP");
+                _boneNailDbgMesh.activate("noel_bone_nail_dbg", _boneNailDbgMat, false, MTRX.ColWhite, null);
+                _boneNailDbgTicket = mp.MovRenderer.assignDrawable(
+                    M2Mover.DRAW_ORDER.PR1, null, PrepareBoneNailDbgMesh, _boneNailDbgMesh, null, null);
+            }
         }
 
         private static void ReleaseBoneNailTicket()
         {
+            try
+            {
+                if (_boneNailDbgTicket != null && _boneNailDbgMap != null &&
+                    _boneNailDbgMap.MovRenderer != null)
+                {
+                    _boneNailDbgMap.MovRenderer.deassignDrawable(_boneNailDbgTicket, -1);
+                }
+            }
+            catch (Exception)
+            {
+            }
+            try
+            {
+                if (_boneNailDbgMat != null)
+                {
+                    IN.DestroyOne(_boneNailDbgMat);
+                }
+            }
+            catch (Exception)
+            {
+            }
+            _boneNailDbgTicket = null;
+            _boneNailDbgMesh = null;
+            _boneNailDbgMat = null;
+            _boneNailDbgMap = null;
             try
             {
                 if (_boneNailTicket != null && _boneNailMap != null &&
@@ -7687,6 +7734,38 @@ namespace KnightInCradle.CharmUi
             _boneNailMesh.uv_width = 1f;
             _boneNailMesh.Rect(offX * mp.CLEN, offY * mp.CLEN, w, h, false);
             MdOut = _boneNailMesh;
+            return true;
+        }
+
+        /// <summary>骨剑判定圆的绿框（需求 2026-09-30）：半径 = `BoneNailHitRadius`，画在骨剑位置。</summary>
+        private static bool PrepareBoneNailDbgMesh(Camera Cam, M2RenderTicket Tk, bool need_redraw, int draw_id,
+            out MeshDrawer MdOut, ref bool color_one_overwrite)
+        {
+            MdOut = null;
+            Map2d mp = _boneNailDbgMap;
+            if (mp == null || _boneNailDbgMesh == null || draw_id != 0)
+            {
+                return false;
+            }
+            _boneNailDbgMesh.clearSimple();
+            if (!_boneNailActive || _boneNailDbgTex == null)
+            {
+                MdOut = _boneNailDbgMesh;
+                return true;
+            }
+            Tk.Matrix = mp.gameObject.transform.localToWorldMatrix *
+                        Matrix4x4.Translate(new Vector3(
+                            mp.pixel2ux(_boneNailPosX * mp.CLEN),
+                            mp.pixel2uy(_boneNailPosY * mp.CLEN), 0f));
+            float size = BoneNailHitRadius * 2f * mp.CLEN;
+            _boneNailDbgMesh.Col = new Color(0f, 1f, 0f, 0.9f); // 绿框
+            _boneNailDbgMesh.initForImgAndTexture(_boneNailDbgTex);
+            _boneNailDbgMesh.uv_top = 0f;
+            _boneNailDbgMesh.uv_height = 1f;
+            _boneNailDbgMesh.uv_left = 0f;
+            _boneNailDbgMesh.uv_width = 1f;
+            _boneNailDbgMesh.Rect(0f, 0f, size, size, false);
+            MdOut = _boneNailDbgMesh;
             return true;
         }
 
