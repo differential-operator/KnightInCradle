@@ -7491,6 +7491,7 @@ namespace KnightInCradle.CharmUi
                     return;
                 }
                 float now = Time.time;
+                int dmg = BoneNailDamageNow();
                 for (int i = 0; i < hits.Length; i++)
                 {
                     Collider2D c = hits[i];
@@ -7502,7 +7503,7 @@ namespace KnightInCradle.CharmUi
                     if (enemy == null)
                     {
                         // 非魔物目标（靶子/拳炮/路障）：同样的"每 0.1 秒一次"
-                        TryDamageGenericTargetNoel(c, pr, BoneNailDamage, _boneNailNextHitGeneric,
+                        TryDamageGenericTargetNoel(c, pr, dmg, _boneNailNextHitGeneric,
                             now, BoneNailHitInterval);
                         continue;
                     }
@@ -7524,16 +7525,35 @@ namespace KnightInCradle.CharmUi
             }
         }
 
+        /// <summary>
+        /// 骨剑当前伤害：40 基础值 × 诺艾尔伤害乘区。
+        /// 需求 2026-09-30：骨剑吃 **13 坚固力量**（+25%）；这里复用的是辅助伤害源统一乘区
+        /// `NoelSideDamageMult(true)`，所以 16 会心层数 / 20 亡者之怒 的加成也一并生效。
+        /// </summary>
+        private static int BoneNailDamageNow()
+        {
+            try
+            {
+                float mult = NoelSideDamageMult(true);
+                return Mathf.Max(1, Mathf.FloorToInt(BoneNailDamage * mult + 0.5f));
+            }
+            catch (Exception)
+            {
+                return BoneNailDamage;
+            }
+        }
+
         private static void ApplyBoneNailDamage(PRNoel pr, NelEnemy enemy)
         {
             try
             {
+                int dmg = BoneNailDamageNow();
                 var atk = new NelAttackInfo();
                 atk.fix_damage = true;
                 atk.Caster = pr;
                 atk.AttackFrom = pr;
-                atk.hpdmg0 = BoneNailDamage;
-                atk.hpdmg_current = BoneNailDamage;
+                atk.hpdmg0 = dmg;
+                atk.hpdmg_current = dmg;
                 atk._apply_knockback_current = true;
                 atk.PublishMagic = _lastNoelNailMg;
                 atk.CenterXy(enemy.x, enemy.y, 0f);
