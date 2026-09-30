@@ -7198,8 +7198,22 @@ namespace KnightInCradle.CharmUi
         /// ④ 骨剑判定半径内的目标受 `BoneNailDamage` 真伤，**每停留 `BoneNailHitInterval` 秒再吃一次**。
         /// </summary>
         public const float BoneNailTapMaxSeconds = 0.25f;
+        /// <summary>前冲段：30 格/秒线性减到 0。</summary>
         public const float BoneNailOutTime = 0.3f;
-        public const float BoneNailTotalTime = 0.6f;
+        /// <summary>到达最远端后的停留时间（需求 2026-09-30：停留 0.3 秒再收回）。</summary>
+        public const float BoneNailHoldTime = 0.3f;
+        /// <summary>禁止诺艾尔输入的时间（**自释放开始计时**，需求 2026-09-30：0.4 秒）。</summary>
+        public const float BoneNailLockTime = 0.4f;
+        /// <summary>缓降窗口（自释放开始计时，需求 2026-09-30：0.5 秒）。</summary>
+        public const float BoneNailSoftFallTime = 0.5f;
+        /// <summary>兜底：整套动作最多持续这么久（收回追不上她时强制作废）。</summary>
+        public const float BoneNailMaxTime = 3f;
+        /// <summary>收回阶段的加速时长（秒）：末速到达 `BoneNailSpeed`。</summary>
+        public const float BoneNailReturnRamp = 0.3f;
+        /// <summary>离诺艾尔中心多近算"收回完成"（格）。</summary>
+        public const float BoneNailReturnDoneDist = 0.15f;
+        /// <summary>骨剑锚点相对身体中心**上移**的量（格）——渲染与判定共用同一个位置。</summary>
+        public const float BoneNailUpY = 0.5f;
         public const float BoneNailSpeed = 30f;
         public const float BoneNailHitRadius = 0.9f;
         public const float BoneNailHitInterval = 0.1f;
@@ -7211,9 +7225,14 @@ namespace KnightInCradle.CharmUi
         public const string BoneNailSpriteRight = "bone_nail_right";
 
         private static bool _boneNailActive;
+        /// <summary>当前是否处于"禁止输入"窗口（自释放起 0.4 秒；被魔物打到会提前结束）。</summary>
+        private static bool _boneNailLocking;
         private static float _boneNailT;
         private static float _boneNailPosX;
         private static float _boneNailPosY;
+        /// <summary>释放瞬间的锚点（前冲 / 停留阶段用它，保证"停留"是真的停在最远端）。</summary>
+        private static float _boneNailAnchorX;
+        private static float _boneNailAnchorY;
         private static float _boneNailDir = 1f;
         private static int _boneNailHpAtStart;
         private static float _boneNailMagicHold;
@@ -7232,20 +7251,14 @@ namespace KnightInCradle.CharmUi
         /// <summary>骨剑突刺是否正在进行（输入锁 / 姿势覆盖要看它）。</summary>
         public static bool NoelBoneNailActive => _boneNailActive;
 
-        /// <summary>
-        /// 骨剑相对诺艾尔身体中心的**前向位移**（格）：
-        /// 前 0.3 秒 v = 30(1-u) 积分 → 最远 4.5 格；后 0.3 秒按 u² 对称收回（末速同为 30）。
-        /// </summary>
+        /// <summary>骨剑能飞出的最远距离（格）：v = 30(1-u) 在 0.3 秒上的积分。</summary>
+        private static float BoneNailMaxOffset => BoneNailSpeed * BoneNailOutTime * 0.5f;
+
+        /// <summary>前冲阶段的**前向位移**（格）：v = 30(1-u) 积分。</summary>
         private static float BoneNailOffset(float t)
         {
-            float maxD = BoneNailSpeed * BoneNailOutTime * 0.5f;
-            if (t <= BoneNailOutTime)
-            {
-                float u = Mathf.Clamp01(t / BoneNailOutTime);
-                return BoneNailSpeed * BoneNailOutTime * (u - 0.5f * u * u);
-            }
-            float u2 = Mathf.Clamp01((t - BoneNailOutTime) / (BoneNailTotalTime - BoneNailOutTime));
-            return maxD * (1f - u2 * u2);
+            float u = Mathf.Clamp01(t / BoneNailOutTime);
+            return BoneNailSpeed * BoneNailOutTime * (u - 0.5f * u * u);
         }
 
         private static void StartBoneNail(PRNoel pr)
@@ -7253,10 +7266,13 @@ namespace KnightInCradle.CharmUi
             try
             {
                 _boneNailActive = true;
+                _boneNailLocking = true;
                 _boneNailT = 0f;
                 _boneNailDir = pr.mpf_is_right >= 0f ? 1f : -1f;
                 _boneNailPosX = pr.x;
-                _boneNailPosY = NoelBodyCenterY(pr);
+                _boneNailPosY = NoelBodyCenterY(pr) - BoneNailUpY;
+                _boneNailAnchorX = _boneNailPosX;
+                _boneNailAnchorY = _boneNailPosY;
                 _boneNailHpAtStart = PrHpField != null ? (int)PrHpField.GetValue(pr) : 0;
                 _boneNailNextHit.Clear();
                 _boneNailNextHitGeneric.Clear();
@@ -7277,13 +7293,15 @@ namespace KnightInCradle.CharmUi
             }
         }
 
-        private static void EndBoneNail()
+        private static void EndBoneNail(PRNoel pr)
         {
             _boneNailActive = false;
+            _boneNailLocking = false;
             _boneNailT = 0f;
             _boneNailNextHit.Clear();
             _boneNailNextHitGeneric.Clear();
             ReleaseBoneNailTicket();
+            SetNoelBoneNailSoftFall(pr, false);
         }
 
         /// <summary>每帧推进（诺艾尔模式调用）：单点检测 → 动作推进 → 判定 → 票据维护。</summary>
@@ -7295,7 +7313,7 @@ namespace KnightInCradle.CharmUi
                 {
                     if (_boneNailActive)
                     {
-                        EndBoneNail();
+                        EndBoneNail(pr);
                     }
                     _boneNailMagicHold = 0f;
                     _boneNailMagicWasHeld = false;
@@ -7334,20 +7352,52 @@ namespace KnightInCradle.CharmUi
                     int hp = (int)PrHpField.GetValue(pr);
                     if (hp < _boneNailHpAtStart || hp <= 0 || !pr.is_alive)
                     {
-                        EndBoneNail();
+                        EndBoneNail(pr);
                         return;
                     }
                 }
                 _boneNailT += dt;
-                if (_boneNailT >= BoneNailTotalTime)
+                // 输入锁：自释放起 0.4 秒（收回阶段不再锁，骨头自己会追着她）
+                _boneNailLocking = _boneNailT < BoneNailLockTime;
+                // 缓降：自释放起 0.5 秒
+                SetNoelBoneNailSoftFall(pr, _boneNailT < BoneNailSoftFallTime);
+                // 锚点 = 身体中心再上移 0.5 格（渲染与判定共用）
+                float centerX = pr.x;
+                float centerY = NoelBodyCenterY(pr) - BoneNailUpY;
+                if (_boneNailT <= BoneNailOutTime)
                 {
-                    EndBoneNail();
+                    // 前冲（以释放瞬间的锚点为准）
+                    _boneNailPosX = _boneNailAnchorX + _boneNailDir * BoneNailOffset(_boneNailT);
+                    _boneNailPosY = _boneNailAnchorY;
+                }
+                else if (_boneNailT <= BoneNailOutTime + BoneNailHoldTime)
+                {
+                    // 最远端停留 0.3 秒（停在原地，不跟她走）
+                    _boneNailPosX = _boneNailAnchorX + _boneNailDir * BoneNailMaxOffset;
+                    _boneNailPosY = _boneNailAnchorY;
+                }
+                else
+                {
+                    // 收回：朝她的身体中心加速（0.3 秒加速到 30 格/秒），追上中心即消失
+                    float rt = _boneNailT - (BoneNailOutTime + BoneNailHoldTime);
+                    float spd = BoneNailSpeed * Mathf.Clamp01(rt / BoneNailReturnRamp);
+                    float dx = centerX - _boneNailPosX;
+                    float dy = centerY - _boneNailPosY;
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                    if (dist <= BoneNailReturnDoneDist)
+                    {
+                        EndBoneNail(pr);
+                        return;
+                    }
+                    float step = Mathf.Min(dist, spd * dt);
+                    _boneNailPosX += dx / dist * step;
+                    _boneNailPosY += dy / dist * step;
+                }
+                if (_boneNailT >= BoneNailMaxTime)
+                {
+                    EndBoneNail(pr); // 兜底：收回追不上时强制作废
                     return;
                 }
-                // 位置 = 诺艾尔身体中心 + 朝向前方的位移（跟着她走，收回也回到她身上）
-                float off = BoneNailOffset(_boneNailT);
-                _boneNailPosX = pr.x + _boneNailDir * off;
-                _boneNailPosY = NoelBodyCenterY(pr);
                 CheckBoneNailHits(pr);
                 EnsureBoneNailTicket(pr, true);
             }
@@ -10884,7 +10934,7 @@ namespace KnightInCradle.CharmUi
                 }
                 // 护符18 骨剑突刺（需求 2026-09-29）：这 0.6 秒内锁掉移动/跳跃/攻击/法术
                 // （被魔物攻击时技能会提前中断，锁也随之解除）
-                if (_boneNailActive && (isDirection || isJump ||
+                if (_boneNailLocking && (isDirection || isJump ||
                                         key == KEY.SIMKEY.Z || key == KEY.SIMKEY.X))
                 {
                     __result = false;
@@ -11176,6 +11226,32 @@ namespace KnightInCradle.CharmUi
                 else if (pr.Skill.FlgSoftFall.hasKey(NoelChantSoftFallKey))
                 {
                     pr.Skill.FlgSoftFall.Rem(NoelChantSoftFallKey);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>骨剑突刺缓降用的 FlgSoftFall 键名（与护符33 的键分开，避免互相干扰）。</summary>
+        private const string NoelBoneNailSoftFallKey = "KIC_BONE_NAIL";
+
+        /// <summary>护符18 骨剑突刺期间（需求 2026-09-30）：同样复用 AIC 的 `FlgSoftFall` 获得缓降。</summary>
+        private static void SetNoelBoneNailSoftFall(PRNoel pr, bool active)
+        {
+            try
+            {
+                if (pr == null || pr.Skill == null || pr.Skill.FlgSoftFall == null)
+                {
+                    return;
+                }
+                if (active)
+                {
+                    pr.Skill.FlgSoftFall.Add(NoelBoneNailSoftFallKey);
+                }
+                else if (pr.Skill.FlgSoftFall.hasKey(NoelBoneNailSoftFallKey))
+                {
+                    pr.Skill.FlgSoftFall.Rem(NoelBoneNailSoftFallKey);
                 }
             }
             catch (Exception)
