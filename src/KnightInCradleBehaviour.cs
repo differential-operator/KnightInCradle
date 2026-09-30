@@ -21,9 +21,9 @@ namespace KnightInCradle
         /// 配合后面的 `dll=路径 (文件时间)` 可以立刻确认游戏实际加载的是哪一份 DLL。
         /// </summary>
         // 2026-09-27.42：护符槽配方标记为"已知"（CInfo.obtain_flag）→ 才会出现在炼金列表里
-        // 2026-09-30.17：键位面板补上"查看动作"（F8 下一个 / F7 上一个 / F9 关闭）三条；
-        // 面板自身开关默认改 F10，避让姿势浏览器的 F7~F9
-        internal const string SelfBuildTag = "2026-09-30.17";
+        // 2026-09-30.18：适配 AIC 030h —— 黑暗覆盖层不透明度改为跨版本自适应
+        // （030g 的 `base_alpha` / 030h 的 `level255`），同一份源码可分别编译到两个版本
+        internal const string SelfBuildTag = "2026-09-30.18";
 
         private static bool _harmonyApplied;
         private static bool _seriousInitApplied; // 启动时是否已应用过一次布局（防止残留居中布局）

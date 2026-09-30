@@ -19642,8 +19642,7 @@ namespace KnightInCradle
                     mp.Unstb.GetBinder(M2UnstabilizeMapItem.key_dark);
                 if (binder is M2DarkRenderer dark)
                 {
-                    dark.base_alpha = InDarkArea() ? LanternDarkAlpha : 1f;
-                    dark.need_fine_mesh = true; // 强制重建网格，让新不透明度立即生效
+                    SetDarkAlpha(dark, InDarkArea() ? LanternDarkAlpha : 1f);
                 }
             }
             catch (Exception)
@@ -19666,9 +19665,53 @@ namespace KnightInCradle
                     mp.Unstb.GetBinder(M2UnstabilizeMapItem.key_dark);
                 if (binder is M2DarkRenderer dark)
                 {
-                    dark.base_alpha = 1f;
-                    dark.need_fine_mesh = true; // 强制重建网格，恢复原版黑暗
+                    SetDarkAlpha(dark, 1f);
                 }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>
+        /// 写"黑暗覆盖层的不透明度"（1 = 原版全黑、越小越亮）。
+        ///
+        /// **跨版本自适应**（需求 2026-09-30，AIC 030h 起改了字段）：
+        /// - 030g 及以前：`public float base_alpha`；
+        /// - 030h 起：改成 `public byte level255`（属性，0~255）/ 私有 `level255_` 字段。
+        /// 用反射按"哪个存在写哪个"，同一份源码就能同时编译并运行在两个版本上；
+        /// alpha → level255 的换算按 ×255 取整（可写字段缺失时什么都不做，不抛异常）。
+        /// </summary>
+        private static void SetDarkAlpha(M2DarkRenderer dark, float alpha)
+        {
+            if (dark == null)
+            {
+                return;
+            }
+            try
+            {
+                FieldInfo alphaField = AccessTools.Field(typeof(M2DarkRenderer), "base_alpha");
+                if (alphaField != null)
+                {
+                    alphaField.SetValue(dark, alpha);
+                    dark.need_fine_mesh = true;
+                    return;
+                }
+                int level = Mathf.Clamp(Mathf.RoundToInt(alpha * 255f), 0, 255);
+                PropertyInfo levelProp = AccessTools.Property(typeof(M2DarkRenderer), "level255");
+                if (levelProp != null && levelProp.CanWrite)
+                {
+                    levelProp.SetValue(dark, (byte)level, null);
+                }
+                else
+                {
+                    FieldInfo levelField = AccessTools.Field(typeof(M2DarkRenderer), "level255_");
+                    if (levelField != null)
+                    {
+                        levelField.SetValue(dark, (byte)level);
+                    }
+                }
+                dark.need_fine_mesh = true; // 强制重建网格，让新不透明度立即生效
             }
             catch (Exception)
             {
