@@ -7258,6 +7258,18 @@ namespace KnightInCradle.CharmUi
         /// <summary>骨剑能飞出的最远距离（格）：v = 30(1-u) 在 0.3 秒上的积分。</summary>
         private static float BoneNailMaxOffset => BoneNailSpeed * BoneNailOutTime * 0.5f;
 
+        /// <summary>
+        /// 同时携带 18 修长之钉 + 19 骄傲印记时，骨剑飞行**距离翻倍**（需求 2026-09-30）。
+        /// 跟着时间的减速曲线不变，只是把位移整体乘上这个倍数。
+        /// </summary>
+        public const float BoneNailPrideReachMult = 2f;
+
+        /// <summary>本次骨剑的位移倍数（带 19 骄傲印记时为 `BoneNailPrideReachMult`）。</summary>
+        private static float BoneNailReachMult()
+        {
+            return IsEquipped(CharmOwner.Noel, PrideId) ? BoneNailPrideReachMult : 1f;
+        }
+
         /// <summary>前冲阶段的**前向位移**（格）：v = 30(1-u) 积分。</summary>
         private static float BoneNailOffset(float t)
         {
@@ -7404,16 +7416,18 @@ namespace KnightInCradle.CharmUi
                 // 锚点 = 身体中心再上移 0.5 格（渲染与判定共用）
                 float centerX = pr.x;
                 float centerY = NoelBodyCenterY(pr) - BoneNailUpY;
+                float reachMult = BoneNailReachMult(); // 18+19 同时携带 → 距离翻倍
                 if (_boneNailT <= BoneNailOutTime)
                 {
                     // 前冲（以释放瞬间的锚点为准）
-                    _boneNailPosX = _boneNailAnchorX + _boneNailDir * BoneNailOffset(_boneNailT);
+                    _boneNailPosX = _boneNailAnchorX +
+                                    _boneNailDir * BoneNailOffset(_boneNailT) * reachMult;
                     _boneNailPosY = _boneNailAnchorY;
                 }
                 else if (_boneNailT <= BoneNailOutTime + BoneNailHoldTime)
                 {
                     // 最远端停留 0.3 秒（停在原地，不跟她走）
-                    _boneNailPosX = _boneNailAnchorX + _boneNailDir * BoneNailMaxOffset;
+                    _boneNailPosX = _boneNailAnchorX + _boneNailDir * BoneNailMaxOffset * reachMult;
                     _boneNailPosY = _boneNailAnchorY;
                 }
                 else
