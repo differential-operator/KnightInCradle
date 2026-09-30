@@ -7245,7 +7245,8 @@ namespace KnightInCradle.CharmUi
         /// <summary>绿框调试开关（需求 2026-09-30：已关闭；改成 true 可重新画出判定矩形）。</summary>
         public const bool BoneNailHitboxDebug = false;
         public const float BoneNailHitInterval = 0.1f;
-        public const int BoneNailDamage = 40;
+        /// <summary>骨剑基础伤害（需求 2026-09-30：40 → 24；再乘诺艾尔伤害乘区，含 13 坚固力量 +25%）。</summary>
+        public const int BoneNailDamage = 24;
         /// <summary>释放骨剑消耗的 MP（需求 2026-09-30）。MP 不足时不释放。</summary>
         public const int BoneNailMpCost = 40;
         /// <summary>骨剑姿势（诺艾尔自身的咏唱动作名）。</summary>

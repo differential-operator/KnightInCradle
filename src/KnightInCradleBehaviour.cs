@@ -21,8 +21,8 @@ namespace KnightInCradle
         /// 配合后面的 `dll=路径 (文件时间)` 可以立刻确认游戏实际加载的是哪一份 DLL。
         /// </summary>
         // 2026-09-27.42：护符槽配方标记为"已知"（CInfo.obtain_flag）→ 才会出现在炼金列表里
-        // 2026-09-30.12：关掉骨剑判定绿框（BoneNailHitboxDebug=false，改回 true 可恢复）
-        internal const string SelfBuildTag = "2026-09-30.12";
+        // 2026-09-30.13：骨剑基础伤害 40 → 24；18 修长之钉护符文本替换
+        internal const string SelfBuildTag = "2026-09-30.13";
 
         private static bool _harmonyApplied;
         private static bool _seriousInitApplied; // 启动时是否已应用过一次布局（防止残留居中布局）

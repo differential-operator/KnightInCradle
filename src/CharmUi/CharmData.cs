@@ -142,7 +142,7 @@ namespace KnightInCradle.CharmUi
             new CharmData { Id = 17, KName = "快速劈砍", KDesc = "诞生于那些被融合的不完美的废弃骨钉。\n\n允许持有者更快的挥动骨钉。", KCost = 3, IconFile = "17_fast_slash", Name = "快速劈砍", Cost = 3,
                 Desc = "允许持有者更快地挥动法杖。\n\n熟能生巧。" },
             new CharmData { Id = 18, KName = "修长之钉", KDesc = "允许打击更远处的敌人。\n\n增加骨钉攻击范围。", KCost = 2, IconFile = "18_long_nail", Name = "修长之钉", Cost = 2,
-                Desc = "增加持有者法杖的攻击范围，允许打击更远处的敌人。\n\n有时候就差一点点。" },
+                Desc = "你能够召唤一把巨大的骨钉，以攻击远处的敌人。\n\n兼顾了距离与锋利的强大武器。" },
             new CharmData { Id = 19, KName = "骄傲印记", KDesc = "由螳螂部落慷慨赠予他们尊敬的人。\n\n大大增加骨钉的攻击范围。", KCost = 3, IconFile = "19_pride", Name = "骄傲印记", Cost = 3,
                 Desc = "大大增加持有者法杖的攻击范围，使其能够从更远处打击敌人。\n\n应得的荣誉。" },
             new CharmData { Id = 20, KName = "亡者之怒", KDesc = "体现了那些将死之人的愤怒和英勇。\n\n接近死亡时，使骨钉的伤害大幅提升。", KCost = 2, IconFile = "20_fury", Name = "亡者之怒", Cost = 4,
