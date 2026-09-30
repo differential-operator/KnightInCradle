@@ -7977,6 +7977,13 @@ namespace KnightInCradle.CharmUi
                           (IsEquipped(CharmOwner.Noel, PrideId)
                               ? KnightInCradlePlugin.PrideSlashHeightRatio
                               : KnightInCradlePlugin.LongNailSlashHeightRatio);
+                // 需求 2026-09-30（19 骄傲印记）：**未佩戴插件「长法杖」**（AIC 强化 `long_reach`）时，
+                // 剑气渲染整体**向下拉伸 0.2 格** —— 上沿不动，只把下沿往下加长。
+                float stretchPx = 0f;
+                if (IsEquipped(CharmOwner.Noel, PrideId) && !NoelHasLongReachEnhancer(pr))
+                {
+                    stretchPx = PrideSlashStretchDownGrid * mp.CLEN;
+                }
                 w *= sizeK;
                 if (useMagic)
                 {
@@ -8003,10 +8010,29 @@ namespace KnightInCradle.CharmUi
                     _noelLongNailArcMesh.uv_left = 0f;
                     _noelLongNailArcMesh.uv_width = 1f;
                 }
-                _noelLongNailArcMesh.Rect(dx, 0f, w, h, false);
+                // 网格 +Y 向上：向下拉伸 = 高度加 `stretchPx`、中心下移一半
+                _noelLongNailArcMesh.Rect(dx, -stretchPx * 0.5f, w, h + stretchPx, false);
             }
             MdOut = _noelLongNailArcMesh;
             return true;
+        }
+
+        /// <summary>
+        /// 护符19 专属：**未佩戴插件「长法杖」**时，剑气渲染向下拉伸的格数（需求 2026-09-30，0.2 格）。
+        /// </summary>
+        private const float PrideSlashStretchDownGrid = 0.2f;
+
+        /// <summary>诺艾尔是否佩戴了插件「长法杖」（AIC 强化 `ENHA.EH.long_reach`）。</summary>
+        private static bool NoelHasLongReachEnhancer(PRNoel pr)
+        {
+            try
+            {
+                return pr != null && pr.getEH(ENHA.EH.long_reach);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         private static Texture2D[] LoadLongNailSlashTextures()
