@@ -5856,6 +5856,27 @@ namespace KnightInCradle.CharmUi
             return true;
         }
 
+        /// <summary>1×1 白色贴图（给"纯色线段/矩形"用的网格做材质底图）。</summary>
+        private static Texture2D MakeSolidWhiteTexture()
+        {
+            try
+            {
+                var tex = new Texture2D(1, 1, TextureFormat.RGBA32, false)
+                {
+                    filterMode = FilterMode.Point,
+                    wrapMode = TextureWrapMode.Clamp,
+                    hideFlags = HideFlags.HideAndDontSave
+                };
+                tex.SetPixel(0, 0, Color.white);
+                tex.Apply(false, false);
+                return tex;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
         /// <summary>程序化生成"空心圆环"贴图（绿色由绘制时的 Col 乘上去）。</summary>
         private static Texture2D MakeRingTexture(int size, float thicknessRatio)
         {
@@ -7217,7 +7238,10 @@ namespace KnightInCradle.CharmUi
         /// <summary>骨剑锚点相对身体中心**上移**的量（格）——渲染与判定共用同一个位置。</summary>
         public const float BoneNailUpY = 0.5f;
         public const float BoneNailSpeed = 30f;
-        public const float BoneNailHitRadius = 0.9f;
+        /// <summary>骨剑判定箱：沿飞行方向的长度（格）。需求 2026-09-30：长 4 格 × 宽 2 格的矩形。</summary>
+        public const float BoneNailHitboxLength = 4f;
+        /// <summary>骨剑判定箱：垂直方向的宽度（格）。</summary>
+        public const float BoneNailHitboxWidth = 2f;
         public const float BoneNailHitInterval = 0.1f;
         public const int BoneNailDamage = 40;
         /// <summary>释放骨剑消耗的 MP（需求 2026-09-30）。MP 不足时不释放。</summary>
@@ -7491,7 +7515,10 @@ namespace KnightInCradle.CharmUi
                 }
                 Vector2 center = mp.gameObject.transform.TransformPoint(new Vector2(
                     mp.pixel2ux(_boneNailPosX * mp.CLEN), mp.pixel2uy(_boneNailPosY * mp.CLEN)));
-                Collider2D[] hits = Physics2D.OverlapCircleAll(center, BoneNailHitRadius, mask);
+                // 需求 2026-09-30：判定箱 = 长 4 格 × 宽 2 格的矩形，中心在骨剑锚点
+                // （物理世界单位与"格"1:1，同护符21/24 的写法）
+                Collider2D[] hits = Physics2D.OverlapBoxAll(center,
+                    new Vector2(BoneNailHitboxLength, BoneNailHitboxWidth), 0f, mask);
                 if (hits == null)
                 {
                     return;
@@ -7617,15 +7644,15 @@ namespace KnightInCradle.CharmUi
             _boneNailMesh.activate("noel_bone_nail", _boneNailMat, false, MTRX.ColWhite, null);
             _boneNailTicket = mp.MovRenderer.assignDrawable(
                 M2Mover.DRAW_ORDER.PR1, null, PrepareBoneNailMesh, _boneNailMesh, null, null);
-            // 绿框：骨剑判定圆（半径 BoneNailHitRadius）
+            // 绿框：骨剑判定矩形（长 BoneNailHitboxLength × 宽 BoneNailHitboxWidth 格）
             if (_boneNailDbgTex == null)
             {
-                _boneNailDbgTex = MakeRingTexture(64, 0.12f);
+                _boneNailDbgTex = MakeSolidWhiteTexture();
             }
             if (_boneNailDbgTex != null)
             {
                 _boneNailDbgMap = mp;
-                _boneNailDbgMesh = new MeshDrawer(null, 4, 6);
+                _boneNailDbgMesh = new MeshDrawer(null, 4 * 8, 6 * 8); // 4 条线段 = 4 个四边形
                 _boneNailDbgMesh.draw_gl_only = true;
                 _boneNailDbgMat = MTRX.newMtr(MTRX.ShaderGDT);
                 _boneNailDbgMat.EnableKeyword("NO_PIXELSNAP");
@@ -7737,7 +7764,10 @@ namespace KnightInCradle.CharmUi
             return true;
         }
 
-        /// <summary>骨剑判定圆的绿框（需求 2026-09-30）：半径 = `BoneNailHitRadius`，画在骨剑位置。</summary>
+        /// <summary>
+        /// 骨剑判定箱的绿框（需求 2026-09-30）：长 `BoneNailHitboxLength` × 宽 `BoneNailHitboxWidth` 的矩形，
+        /// 中心在骨剑锚点，用 4 条绿色线段描边。
+        /// </summary>
         private static bool PrepareBoneNailDbgMesh(Camera Cam, M2RenderTicket Tk, bool need_redraw, int draw_id,
             out MeshDrawer MdOut, ref bool color_one_overwrite)
         {
@@ -7757,14 +7787,19 @@ namespace KnightInCradle.CharmUi
                         Matrix4x4.Translate(new Vector3(
                             mp.pixel2ux(_boneNailPosX * mp.CLEN),
                             mp.pixel2uy(_boneNailPosY * mp.CLEN), 0f));
-            float size = BoneNailHitRadius * 2f * mp.CLEN;
+            float hw = BoneNailHitboxLength * 0.5f * mp.CLEN;
+            float hh = BoneNailHitboxWidth * 0.5f * mp.CLEN;
+            float thick = Mathf.Max(1f, 0.06f * mp.CLEN);
             _boneNailDbgMesh.Col = new Color(0f, 1f, 0f, 0.9f); // 绿框
             _boneNailDbgMesh.initForImgAndTexture(_boneNailDbgTex);
             _boneNailDbgMesh.uv_top = 0f;
             _boneNailDbgMesh.uv_height = 1f;
             _boneNailDbgMesh.uv_left = 0f;
             _boneNailDbgMesh.uv_width = 1f;
-            _boneNailDbgMesh.Rect(0f, 0f, size, size, false);
+            _boneNailDbgMesh.Line(-hw, -hh, hw, -hh, thick);
+            _boneNailDbgMesh.Line(hw, -hh, hw, hh, thick);
+            _boneNailDbgMesh.Line(hw, hh, -hw, hh, thick);
+            _boneNailDbgMesh.Line(-hw, hh, -hw, -hh, thick);
             MdOut = _boneNailDbgMesh;
             return true;
         }
