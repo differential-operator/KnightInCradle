@@ -7378,9 +7378,11 @@ namespace KnightInCradle.CharmUi
                 }
                 else
                 {
-                    // 收回：朝她的身体中心加速（0.3 秒加速到 30 格/秒），追上中心即消失
+                    // 收回：朝她的身体中心、**速度越来越快**（需求 2026-09-30：她跑动时也要收得回来）。
+                    // ① 时间项：0.3 秒内从 15 加到 75 格/秒，之后继续线性增长；
+                    // ② 距离项：距离 / 0.12 秒 —— 保证无论她跑多快都能在半帧级的短时间内贴上她，
+                    //    两项取较大值，所以"她越跑、骨头追得越快"。
                     float rt = _boneNailT - (BoneNailOutTime + BoneNailHoldTime);
-                    float spd = BoneNailSpeed * Mathf.Clamp01(rt / BoneNailReturnRamp);
                     float dx = centerX - _boneNailPosX;
                     float dy = centerY - _boneNailPosY;
                     float dist = Mathf.Sqrt(dx * dx + dy * dy);
@@ -7389,6 +7391,9 @@ namespace KnightInCradle.CharmUi
                         EndBoneNail(pr);
                         return;
                     }
+                    float spd = Mathf.Max(
+                        BoneNailSpeed * (0.5f + 2f * rt / BoneNailReturnRamp),
+                        dist / 0.12f);
                     float step = Mathf.Min(dist, spd * dt);
                     _boneNailPosX += dx / dist * step;
                     _boneNailPosY += dy / dist * step;
