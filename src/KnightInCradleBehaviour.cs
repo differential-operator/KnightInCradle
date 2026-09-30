@@ -21,9 +21,8 @@ namespace KnightInCradle
         /// 配合后面的 `dll=路径 (文件时间)` 可以立刻确认游戏实际加载的是哪一份 DLL。
         /// </summary>
         // 2026-09-27.42：护符槽配方标记为"已知"（CInfo.obtain_flag）→ 才会出现在炼金列表里
-        // 2026-09-30.06：19 骄傲印记 —— 未佩戴插件「长法杖」(ENHA.EH.long_reach) 时，
-        // 剑气渲染向下拉伸 0.2 格
-        internal const string SelfBuildTag = "2026-09-30.06";
+        // 2026-09-30.07：19 骄傲印记的距离加成 35% → 40%（剑气渲染长度/宽度随之等比例变化）
+        internal const string SelfBuildTag = "2026-09-30.07";
 
         private static bool _harmonyApplied;
         private static bool _seriousInitApplied; // 启动时是否已应用过一次布局（防止残留居中布局）

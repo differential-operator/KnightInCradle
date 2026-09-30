@@ -92,7 +92,7 @@ namespace KnightInCradle
         internal static ConfigEntry<float> PrideAlphaConfig;
 
         internal static float PrideReachPercent =>
-            PrideReachPercentConfig != null ? Mathf.Clamp(PrideReachPercentConfig.Value, 0, 200) : 35f;
+            PrideReachPercentConfig != null ? Mathf.Clamp(PrideReachPercentConfig.Value, 0, 200) : 40f;
         internal static float PrideSlashLengthRatio =>
             PrideSlashLengthRatioConfig != null ? Mathf.Clamp(PrideSlashLengthRatioConfig.Value, 0.1f, 3f) : 1f;
         internal static float PrideSlashScale =>
@@ -925,9 +925,9 @@ namespace KnightInCradle
             LongNailSlashHeightConfig = Config.Bind("Charm18", "LongNailSlashHeightRatio", 1.2f,
                 "修长之钉剑气渲染高度倍率（只改高度、不改长度，默认 1）。调大剑气更厚/更高，调小更扁。");
             // 护符19 骄傲印记：与修长之钉同一套做法，配置独立
-            PrideReachPercentConfig = Config.Bind("Charm19", "PrideReachPercent", 35,
-                "骄傲印记：诺艾尔近战距离加成百分比（默认 35 = +35%）。" +
-                "与修长之钉同时佩戴时两个百分比相加（25+35=60%）。");
+            PrideReachPercentConfig = Config.Bind("Charm19", "PrideReachPercent", 40,
+                "骄傲印记：诺艾尔近战距离加成百分比（默认 40 = +40%）。" +
+                "剑气渲染长度 / 水平宽度会随之等比例变化（长度倍率见 PrideSlashLengthRatio）。");
             PrideSlashLengthRatioConfig = Config.Bind("Charm19", "PrideSlashLengthRatio", 1f,
                 "骄傲印记剑气长度 = 该招加成后触及距离 × 这个倍率（默认 1 = 与判定等长）。");
             PrideSlashScaleConfig = Config.Bind("Charm19", "PrideSlashScale", 1f,
