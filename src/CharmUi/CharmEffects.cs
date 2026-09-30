@@ -7242,6 +7242,8 @@ namespace KnightInCradle.CharmUi
         public const float BoneNailHitboxLength = 4f;
         /// <summary>骨剑判定箱：垂直方向的宽度（格）。</summary>
         public const float BoneNailHitboxWidth = 2f;
+        /// <summary>绿框调试开关（需求 2026-09-30：已关闭；改成 true 可重新画出判定矩形）。</summary>
+        public const bool BoneNailHitboxDebug = false;
         public const float BoneNailHitInterval = 0.1f;
         public const int BoneNailDamage = 40;
         /// <summary>释放骨剑消耗的 MP（需求 2026-09-30）。MP 不足时不释放。</summary>
@@ -7645,24 +7647,63 @@ namespace KnightInCradle.CharmUi
             _boneNailTicket = mp.MovRenderer.assignDrawable(
                 M2Mover.DRAW_ORDER.PR1, null, PrepareBoneNailMesh, _boneNailMesh, null, null);
             // 绿框：骨剑判定矩形（长 BoneNailHitboxLength × 宽 BoneNailHitboxWidth 格）
-            if (_boneNailDbgTex == null)
+            // 需求 2026-09-30：调试结束，默认**不建票据**（把 BoneNailHitboxDebug 改回 true 即可恢复）
+            if (BoneNailHitboxDebug)
             {
-                _boneNailDbgTex = MakeSolidWhiteTexture();
+                if (_boneNailDbgTex == null)
+                {
+                    _boneNailDbgTex = MakeSolidWhiteTexture();
+                }
+                if (_boneNailDbgTex != null)
+                {
+                    _boneNailDbgMap = mp;
+                    _boneNailDbgMesh = new MeshDrawer(null, 4 * 8, 6 * 8); // 4 条线段 = 4 个四边形
+                    _boneNailDbgMesh.draw_gl_only = true;
+                    _boneNailDbgMat = MTRX.newMtr(MTRX.ShaderGDT);
+                    _boneNailDbgMat.EnableKeyword("NO_PIXELSNAP");
+                    _boneNailDbgMesh.activate("noel_bone_nail_dbg", _boneNailDbgMat, false, MTRX.ColWhite, null);
+                    _boneNailDbgTicket = mp.MovRenderer.assignDrawable(
+                        M2Mover.DRAW_ORDER.PR1, null, PrepareBoneNailDbgMesh, _boneNailDbgMesh, null, null);
+                }
             }
-            if (_boneNailDbgTex != null)
+            else
             {
-                _boneNailDbgMap = mp;
-                _boneNailDbgMesh = new MeshDrawer(null, 4 * 8, 6 * 8); // 4 条线段 = 4 个四边形
-                _boneNailDbgMesh.draw_gl_only = true;
-                _boneNailDbgMat = MTRX.newMtr(MTRX.ShaderGDT);
-                _boneNailDbgMat.EnableKeyword("NO_PIXELSNAP");
-                _boneNailDbgMesh.activate("noel_bone_nail_dbg", _boneNailDbgMat, false, MTRX.ColWhite, null);
-                _boneNailDbgTicket = mp.MovRenderer.assignDrawable(
-                    M2Mover.DRAW_ORDER.PR1, null, PrepareBoneNailDbgMesh, _boneNailDbgMesh, null, null);
+                ReleaseBoneNailDbgTicket();
             }
         }
 
         private static void ReleaseBoneNailTicket()
+        {
+            ReleaseBoneNailDbgTicket();
+            try
+            {
+                if (_boneNailTicket != null && _boneNailMap != null &&
+                    _boneNailMap.MovRenderer != null)
+                {
+                    _boneNailMap.MovRenderer.deassignDrawable(_boneNailTicket, -1);
+                }
+            }
+            catch (Exception)
+            {
+            }
+            try
+            {
+                if (_boneNailMat != null)
+                {
+                    IN.DestroyOne(_boneNailMat);
+                }
+            }
+            catch (Exception)
+            {
+            }
+            _boneNailTicket = null;
+            _boneNailMesh = null;
+            _boneNailMat = null;
+            _boneNailMap = null;
+        }
+
+        /// <summary>绿框调试票据的释放（关掉调试开关时也会走这里）。</summary>
+        private static void ReleaseBoneNailDbgTicket()
         {
             try
             {
@@ -7689,31 +7730,6 @@ namespace KnightInCradle.CharmUi
             _boneNailDbgMesh = null;
             _boneNailDbgMat = null;
             _boneNailDbgMap = null;
-            try
-            {
-                if (_boneNailTicket != null && _boneNailMap != null &&
-                    _boneNailMap.MovRenderer != null)
-                {
-                    _boneNailMap.MovRenderer.deassignDrawable(_boneNailTicket, -1);
-                }
-            }
-            catch (Exception)
-            {
-            }
-            try
-            {
-                if (_boneNailMat != null)
-                {
-                    IN.DestroyOne(_boneNailMat);
-                }
-            }
-            catch (Exception)
-            {
-            }
-            _boneNailTicket = null;
-            _boneNailMesh = null;
-            _boneNailMat = null;
-            _boneNailMap = null;
         }
 
         /// <summary>骨剑绘制：锚定骨剑当前位置，按朝向选左右贴图。</summary>
