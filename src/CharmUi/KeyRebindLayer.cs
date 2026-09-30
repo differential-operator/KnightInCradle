@@ -17,10 +17,16 @@ namespace KnightInCradle.CharmUi
     {
         private static KeyRebindLayer _instance;
 
+        /// <summary>面板整体缩放（需求 2026-09-30：放大一倍）。</summary>
+        private const float PanelScale = 2f;
+
         private bool _open;
         private bool _capturing;
         private int _captureIndex = -1;
         private Vector2 _scroll;
+        private bool _cursorSaved;
+        private bool _prevCursorVisible;
+        private CursorLockMode _prevCursorLock;
         private GUIStyle _title;
         private GUIStyle _label;
         private GUIStyle _hint;
@@ -84,6 +90,40 @@ namespace KnightInCradle.CharmUi
                         _capturing = false;
                         _captureIndex = -1;
                     }
+                    SetPanelCursor(_open);
+                }
+                // 面板打开期间每帧保持"显示并解锁鼠标"（游戏在游玩中会自己把鼠标藏起来/锁住）
+                if (_open)
+                {
+                    SetPanelCursor(true);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>打开面板时呼出鼠标（显示 + 解锁），关闭时还原原来的鼠标状态。</summary>
+        private void SetPanelCursor(bool open)
+        {
+            try
+            {
+                if (open)
+                {
+                    if (!_cursorSaved)
+                    {
+                        _prevCursorVisible = Cursor.visible;
+                        _prevCursorLock = Cursor.lockState;
+                        _cursorSaved = true;
+                    }
+                    Cursor.visible = true;
+                    Cursor.lockState = CursorLockMode.None;
+                }
+                else if (_cursorSaved)
+                {
+                    Cursor.visible = _prevCursorVisible;
+                    Cursor.lockState = _prevCursorLock;
+                    _cursorSaved = false;
                 }
             }
             catch (Exception)
@@ -150,9 +190,14 @@ namespace KnightInCradle.CharmUi
 
                 HandleCaptureEvent();
 
-                float w = Mathf.Min(560f, Screen.width - 40f);
-                float h = Mathf.Min(560f, Screen.height - 40f);
-                Rect panel = new Rect((Screen.width - w) * 0.5f, (Screen.height - h) * 0.5f, w, h);
+                // 需求 2026-09-30：整体放大一倍（用 GUI 矩阵缩放，所有尺寸/字号一起翻倍）
+                GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity,
+                    new Vector3(PanelScale, PanelScale, 1f));
+                float vw = Screen.width / PanelScale;
+                float vh = Screen.height / PanelScale;
+                float w = Mathf.Min(560f, vw - 20f);
+                float h = Mathf.Min(560f, vh - 20f);
+                Rect panel = new Rect((vw - w) * 0.5f, (vh - h) * 0.5f, w, h);
                 Color prev = GUI.color;
                 GUI.color = new Color(0f, 0f, 0f, 0.82f);
                 GUI.DrawTexture(panel, Texture2D.whiteTexture);
