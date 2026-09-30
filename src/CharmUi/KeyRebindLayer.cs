@@ -81,7 +81,7 @@ namespace KnightInCradle.CharmUi
                 KeyCode toggle = KeyConfig.Parse(
                     KnightInCradlePlugin.KeyRebindToggleKey != null
                         ? KnightInCradlePlugin.KeyRebindToggleKey.Value
-                        : null, KeyCode.F9);
+                        : null, KeyCode.F10);
                 if (toggle != KeyCode.None && !_capturing && UnityEngine.Input.GetKeyDown(toggle))
                 {
                     _open = !_open;
@@ -152,8 +152,12 @@ namespace KnightInCradle.CharmUi
                 new Row { Label = "抬头 / 法术上", Entry = KnightInCradlePlugin.LookUpKey, Fallback = KeyCode.Q },
                 new Row { Label = "低头 / 法术下", Entry = KnightInCradlePlugin.LookDownKey, Fallback = KeyCode.Mouse1 },
                 new Row { Label = "超级冲刺（额外键）", Entry = KnightInCradlePlugin.SuperDashKey, Fallback = KeyCode.LeftControl },
+                new Row { Label = "── 查看动作（姿势浏览器） ──", Entry = null, Fallback = KeyCode.None },
+                new Row { Label = "查看动作：下一个姿势", Entry = KnightInCradlePlugin.PoseBrowserNextKeyConfig, Fallback = KeyCode.F8 },
+                new Row { Label = "查看动作：上一个姿势", Entry = KnightInCradlePlugin.PoseBrowserPrevKeyConfig, Fallback = KeyCode.F7 },
+                new Row { Label = "查看动作：关闭浏览", Entry = KnightInCradlePlugin.PoseBrowserOffKeyConfig, Fallback = KeyCode.F9 },
                 new Row { Label = "── 本面板 ──", Entry = null, Fallback = KeyCode.None },
-                new Row { Label = "打开 / 关闭键位面板", Entry = KnightInCradlePlugin.KeyRebindToggleKey, Fallback = KeyCode.F9, Note = "改完立即生效" },
+                new Row { Label = "打开 / 关闭键位面板", Entry = KnightInCradlePlugin.KeyRebindToggleKey, Fallback = KeyCode.F10, Note = "改完立即生效" },
             };
         }
 
@@ -204,7 +208,11 @@ namespace KnightInCradle.CharmUi
                 GUI.color = prev;
 
                 Rect titleRect = new Rect(panel.x + 16f, panel.y + 10f, panel.width - 32f, 26f);
-                GUI.Label(titleRect, "键位设置（F9 打开 / 关闭）", _title);
+                string toggleName = KeyConfig.Parse(
+                    KnightInCradlePlugin.KeyRebindToggleKey != null
+                        ? KnightInCradlePlugin.KeyRebindToggleKey.Value
+                        : null, KeyCode.F10).ToString();
+                GUI.Label(titleRect, "键位设置（" + toggleName + " 打开 / 关闭）", _title);
 
                 string hint = _capturing
                     ? "请按下新的按键 / 鼠标键…（Esc 取消）"

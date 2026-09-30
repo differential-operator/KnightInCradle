@@ -843,8 +843,9 @@ namespace KnightInCradle
             TauntKey = Config.Bind("Keybinds", "Taunt", "V", "挑衅（默认 V 键，仅地面可用）");
             CritStackKey = Config.Bind("Keybinds", "CritTestStacks", "H",
                 "快捷加会心层数（携带护符16 沉重之击时，按一次直接 +100 层；默认 H 键）");
-            KeyRebindToggleKey = Config.Bind("Keybinds", "KeyRebindToggle", "F9",
-                "局内键位设置面板开关（默认 F9；面板里可以直接改所有模组按键）");
+            KeyRebindToggleKey = Config.Bind("Keybinds", "KeyRebindToggle", "F10",
+                "局内键位设置面板开关（默认 F10；面板里可以直接改所有模组按键。" +
+                "F7~F9 归姿势浏览器「查看动作」用，避免冲突）");
             ConfigRef = Config;
             BoneNailScaleConfig = Config.Bind("Charm18", "BoneNailScale", 0.3f,
                 "护符18 修长之钉：骨剑渲染缩放（相对贴图原始像素）");
