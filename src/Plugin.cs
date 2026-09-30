@@ -28,6 +28,10 @@ namespace KnightInCradle
         internal static ConfigEntry<string> CharmUiKey;
     internal static ConfigEntry<string> TauntKey;
     internal static ConfigEntry<string> CritStackKey;
+    /// <summary>局内键位设置面板的开关（默认 F9）。</summary>
+    internal static ConfigEntry<string> KeyRebindToggleKey;
+    /// <summary>插件自己的 ConfigFile 引用（键位面板保存 cfg 用；`Config` 是 protected）。</summary>
+    internal static ConfigFile ConfigRef;
     // ---- 护符18 修长之钉（2026-09-29 重做：单点法术键 → 骨剑突刺）----
     internal static ConfigEntry<float> BoneNailScaleConfig;
     internal static ConfigEntry<float> BoneNailOffXConfig;
@@ -839,6 +843,9 @@ namespace KnightInCradle
             TauntKey = Config.Bind("Keybinds", "Taunt", "V", "挑衅（默认 V 键，仅地面可用）");
             CritStackKey = Config.Bind("Keybinds", "CritTestStacks", "H",
                 "快捷加会心层数（携带护符16 沉重之击时，按一次直接 +100 层；默认 H 键）");
+            KeyRebindToggleKey = Config.Bind("Keybinds", "KeyRebindToggle", "F9",
+                "局内键位设置面板开关（默认 F9；面板里可以直接改所有模组按键）");
+            ConfigRef = Config;
             BoneNailScaleConfig = Config.Bind("Charm18", "BoneNailScale", 0.3f,
                 "护符18 修长之钉：骨剑渲染缩放（相对贴图原始像素）");
             BoneNailOffXConfig = Config.Bind("Charm18", "BoneNailOffX", 0f,
@@ -1227,7 +1234,8 @@ namespace KnightInCradle
         /// <summary>护符界面打开期间屏蔽小骑士的全部输入（移动/跳跃/攻击/技能/冲刺）。</summary>
         private static bool IsUiSuppressed()
         {
-            return CharmUiController.Instance != null && CharmUiController.Instance.IsOpen;
+            return (CharmUiController.Instance != null && CharmUiController.Instance.IsOpen) ||
+                   CharmUi.KeyRebindLayer.IsOpen; // 键位面板打开时同样屏蔽模组输入
         }
 
         public static KeyCode Parse(string name, KeyCode fallback)

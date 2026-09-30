@@ -21,9 +21,9 @@ namespace KnightInCradle
         /// 配合后面的 `dll=路径 (文件时间)` 可以立刻确认游戏实际加载的是哪一份 DLL。
         /// </summary>
         // 2026-09-27.42：护符槽配方标记为"已知"（CInfo.obtain_flag）→ 才会出现在炼金列表里
-        // 2026-09-30.14：15 稳定之体新增"攻击命中魔物后不产生后坐力"
-        // （挂 M2Attackable.addKnockbackVelocity，只拦 Caster 是诺艾尔自己的那一次）
-        internal const string SelfBuildTag = "2026-09-30.14";
+        // 2026-09-30.15：局内键位设置面板（默认 F9 开关）：列出模组自有按键，
+        // 点"改键"后按新键即写入 cfg 并立即生效（少数启动缓存键会主动刷新）
+        internal const string SelfBuildTag = "2026-09-30.15";
 
         private static bool _harmonyApplied;
         private static bool _seriousInitApplied; // 启动时是否已应用过一次布局（防止残留居中布局）
@@ -178,6 +178,8 @@ namespace KnightInCradle
             {
                 TickNoelCharmEffects();
             }
+            // 局内键位设置面板（默认 F9 开关；幂等创建）
+            KeyRebindLayer.Ensure(gameObject);
 
             if (_knightMode)
             {

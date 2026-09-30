@@ -9562,6 +9562,22 @@ namespace KnightInCradle
         private static KeyCode _superDashKey = KeyCode.C;
         private static KeyCode _superDashAltKey = KeyCode.None;
         private static bool _superDashKeyInit;
+
+        /// <summary>
+        /// 局内改键后刷新"启动时缓存"的那几个键（需求 2026-09-30）：
+        /// 聚焦 / 法球 / 梦钉 / 挑衅 / 超冲 是缓存值，清掉初始化标记后下一次使用会重新从 cfg 解析。
+        /// </summary>
+        public static void RefreshConfigKeys()
+        {
+            try
+            {
+                _keyInit = false;
+                _superDashKeyInit = false;
+            }
+            catch (Exception)
+            {
+            }
+        }
         // 可配置键位缓存（每帧从配置读取，玩家改 cfg 后重启生效）
         private static KeyCode _focusKey = KeyCode.C;
         private static KeyCode _fireballKey = KeyCode.S;
