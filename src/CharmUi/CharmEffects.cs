@@ -11360,8 +11360,9 @@ namespace KnightInCradle.CharmUi
                 // 护符35 旋风斩：起手 / 循环 / 收尾三个动作名接管姿势
                 if (__instance != null && __instance.Pr is PRNoel)
                 {
-                    // 护符18 修长之钉：骨剑突刺期间播放诺艾尔自己的咏唱动作 magic_hold
-                    if (_boneNailActive)
+                    // 护符18 修长之钉：骨剑突刺的**锁定窗口**内播放诺艾尔自己的咏唱动作 magic_hold；
+                    // 输入解锁（释放后 0.4 秒）后立刻恢复原来的姿势（骨剑自己继续飞回来）
+                    if (_boneNailLocking)
                     {
                         title = BoneNailPose;
                         return;
