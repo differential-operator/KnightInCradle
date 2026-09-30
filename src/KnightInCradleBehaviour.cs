@@ -21,8 +21,9 @@ namespace KnightInCradle
         /// 配合后面的 `dll=路径 (文件时间)` 可以立刻确认游戏实际加载的是哪一份 DLL。
         /// </summary>
         // 2026-09-27.42：护符槽配方标记为"已知"（CInfo.obtain_flag）→ 才会出现在炼金列表里
-        // 2026-09-30.03：骨剑收回速度改成"越来越快"（时间项 + 距离项），诺艾尔跑动时也能收回
-        internal const string SelfBuildTag = "2026-09-30.03";
+        // 2026-09-30.04：骨剑收回加硬兜底（到位半径放宽到 0.4 格 / 收回最多 0.8 秒 / 整体最多 3 秒），
+        // 并加一次性诊断日志，确保骨头不会挂在诺艾尔身上
+        internal const string SelfBuildTag = "2026-09-30.04";
 
         private static bool _harmonyApplied;
         private static bool _seriousInitApplied; // 启动时是否已应用过一次布局（防止残留居中布局）

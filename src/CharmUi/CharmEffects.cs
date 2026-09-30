@@ -7211,7 +7211,9 @@ namespace KnightInCradle.CharmUi
         /// <summary>收回阶段的加速时长（秒）：末速到达 `BoneNailSpeed`。</summary>
         public const float BoneNailReturnRamp = 0.3f;
         /// <summary>离诺艾尔中心多近算"收回完成"（格）。</summary>
-        public const float BoneNailReturnDoneDist = 0.15f;
+        public const float BoneNailReturnDoneDist = 0.4f;
+        /// <summary>收回阶段的最长时长（秒）：到点强制结束，绝不允许骨头挂在诺艾尔身上。</summary>
+        public const float BoneNailReturnMaxTime = 0.8f;
         /// <summary>骨剑锚点相对身体中心**上移**的量（格）——渲染与判定共用同一个位置。</summary>
         public const float BoneNailUpY = 0.5f;
         public const float BoneNailSpeed = 30f;
@@ -7276,6 +7278,7 @@ namespace KnightInCradle.CharmUi
                 _boneNailHpAtStart = PrHpField != null ? (int)PrHpField.GetValue(pr) : 0;
                 _boneNailNextHit.Clear();
                 _boneNailNextHitGeneric.Clear();
+                LogBoneNail("释放 dir=" + _boneNailDir.ToString("F0"));
                 // 单点：把正在蓄力的魔法收掉（不弹法术选择、也不发射纯白之箭）
                 try
                 {
@@ -7293,7 +7296,26 @@ namespace KnightInCradle.CharmUi
             }
         }
 
-        private static void EndBoneNail(PRNoel pr)
+        /// <summary>诊断（最多 40 条）：骨剑动作的开始/结束，便于核对"收不回"这类问题。</summary>
+        private static int _boneNailLogCount;
+
+        private static void LogBoneNail(string msg)
+        {
+            try
+            {
+                if (_boneNailLogCount >= 40)
+                {
+                    return;
+                }
+                _boneNailLogCount++;
+                KnightInCradlePlugin.PluginLog?.LogInfo("[KIC][护符18] " + msg);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void EndBoneNail(PRNoel pr, string reason)
         {
             _boneNailActive = false;
             _boneNailLocking = false;
@@ -7302,6 +7324,7 @@ namespace KnightInCradle.CharmUi
             _boneNailNextHitGeneric.Clear();
             ReleaseBoneNailTicket();
             SetNoelBoneNailSoftFall(pr, false);
+            LogBoneNail("结束：" + reason);
         }
 
         /// <summary>每帧推进（诺艾尔模式调用）：单点检测 → 动作推进 → 判定 → 票据维护。</summary>
@@ -7313,7 +7336,7 @@ namespace KnightInCradle.CharmUi
                 {
                     if (_boneNailActive)
                     {
-                        EndBoneNail(pr);
+                        EndBoneNail(pr, "卸下护符/切人");
                     }
                     _boneNailMagicHold = 0f;
                     _boneNailMagicWasHeld = false;
@@ -7352,7 +7375,7 @@ namespace KnightInCradle.CharmUi
                     int hp = (int)PrHpField.GetValue(pr);
                     if (hp < _boneNailHpAtStart || hp <= 0 || !pr.is_alive)
                     {
-                        EndBoneNail(pr);
+                        EndBoneNail(pr, "被攻击中断");
                         return;
                     }
                 }
@@ -7386,21 +7409,24 @@ namespace KnightInCradle.CharmUi
                     float dx = centerX - _boneNailPosX;
                     float dy = centerY - _boneNailPosY;
                     float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                    if (dist <= BoneNailReturnDoneDist)
+                    // 到她身边（略宽松的半径）或收回超时 → 一律结束，避免"挂在她身上"
+                    if (dist <= BoneNailReturnDoneDist || rt >= BoneNailReturnMaxTime)
                     {
-                        EndBoneNail(pr);
+                        EndBoneNail(pr, dist <= BoneNailReturnDoneDist
+                            ? ("收回到位 dist=" + dist.ToString("F2"))
+                            : ("收回超时 dist=" + dist.ToString("F2")));
                         return;
                     }
                     float spd = Mathf.Max(
                         BoneNailSpeed * (0.5f + 2f * rt / BoneNailReturnRamp),
-                        dist / 0.12f);
+                        dist / 0.1f);
                     float step = Mathf.Min(dist, spd * dt);
                     _boneNailPosX += dx / dist * step;
                     _boneNailPosY += dy / dist * step;
                 }
                 if (_boneNailT >= BoneNailMaxTime)
                 {
-                    EndBoneNail(pr); // 兜底：收回追不上时强制作废
+                    EndBoneNail(pr, "整体超时"); // 兜底：收回追不上时强制作废
                     return;
                 }
                 CheckBoneNailHits(pr);
