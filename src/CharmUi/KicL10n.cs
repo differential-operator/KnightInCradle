@@ -40,6 +40,7 @@ namespace KnightInCradle.CharmUi
 
         private static bool _cached;
         private static bool _logged;
+        private static Lang? _loggedLang;
         private static Lang _cachedLang;
         private static float _cachedAt = -10f;
 
@@ -79,17 +80,20 @@ namespace KnightInCradle.CharmUi
                     _cachedLang = Detect();
                     _cached = true;
                     _cachedAt = Time.unscaledTime;
-                    if (!_logged)
+                    // 等游戏把语言表读进来之后再记录（启动早期那一瞬间还没定语言，记了会误导）
+                    bool initted = false;
+                    try
+                    {
+                        initted = TX.isInitted;
+                    }
+                    catch (Exception)
+                    {
+                    }
+                    if (initted && (!_logged || _loggedLang != _cachedLang))
                     {
                         _logged = true;
-                        string fam = "";
-                        try
-                        {
-                            fam = TX.default_family;
-                        }
-                        catch (Exception)
-                        {
-                        }
+                        _loggedLang = _cachedLang;
+                        string fam = CurrentFamilyKey();
                         KnightInCradlePlugin.PluginLog?.LogInfo(
                             "[KIC][语言] AIC 语言族=" + (string.IsNullOrEmpty(fam) ? "(未知)" : fam) +
                             " → 模组文本语言=" + _cachedLang);
@@ -107,31 +111,10 @@ namespace KnightInCradle.CharmUi
         {
             try
             {
-                string fam = TX.default_family;
-                // "_" 是"默认族（日语）"，但**启动早期**语言表还没加载，`default_family` 的初始值就是 "_"，
-                // 所以只有等语言表加载完之后，才能把 "_" 当成日语。
-                bool famLoaded = false;
-                try
+                Lang? byFam = ByFamily(CurrentFamilyKey());
+                if (byFam.HasValue)
                 {
-                    famLoaded = TX.isInitted;
-                }
-                catch (Exception)
-                {
-                }
-                if (!string.IsNullOrEmpty(fam) && fam != "_")
-                {
-                    switch (fam)
-                    {
-                        case "en": return Lang.En;
-                        case "ko-kr": return Lang.Ko;
-                        case "th": return Lang.Th;
-                        case "zh-cn": return Lang.ZhCn;
-                        case "zh-tc": return Lang.ZhTc;
-                    }
-                }
-                if (fam == "_" && famLoaded)
-                {
-                    return Lang.Ja; // 语言表已就绪且仍是默认族 = 游戏按规则选了日语
+                    return byFam.Value;
                 }
             }
             catch (Exception)
@@ -154,6 +137,49 @@ namespace KnightInCradle.CharmUi
             catch (Exception)
             {
                 return Lang.ZhCn;
+            }
+        }
+
+        /// <summary>
+        /// 当前**实际生效**的语言族。注意：游戏在设置里换语言是调 `TX.changeFamily()`，
+        /// 它只改内部的 TxCon，不改 `default_family`，所以要以 `getCurrentFamilyName()` 为准。
+        /// </summary>
+        private static string CurrentFamilyKey()
+        {
+            try
+            {
+                string fam = TX.getCurrentFamilyName();
+                if (!string.IsNullOrEmpty(fam))
+                {
+                    return fam;
+                }
+            }
+            catch (Exception)
+            {
+            }
+            try
+            {
+                return TX.default_family;
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+        }
+
+        private static Lang? ByFamily(string fam)
+        {
+            switch (fam)
+            {
+                case "_":
+                case "ja": return Lang.Ja;
+                case "en": return Lang.En;
+                case "ko-kr": return Lang.Ko;
+                case "th": return Lang.Th;
+                case "zh-cn":
+                case "zh-cnB": return Lang.ZhCn;
+                case "zh-tc": return Lang.ZhTc;
+                default: return null;
             }
         }
 

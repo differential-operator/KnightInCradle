@@ -28,3 +28,4 @@ audio_embed/
 AudioClip/
 charm_ui/
 CharmUiExport/
+_tmp_*.dll
