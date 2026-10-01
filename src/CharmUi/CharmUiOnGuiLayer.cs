@@ -22,6 +22,8 @@ namespace KnightInCradle.CharmUi
             new Dictionary<string, Texture2D>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, GUIStyle> _styles = new Dictionary<string, GUIStyle>();
         private readonly Dictionary<string, Font> _fonts = new Dictionary<string, Font>();
+        private bool _fontLangKnown;                 // 已按哪种语言建过字体
+        private KicL10n.Lang _fontLang;
         private readonly Dictionary<string, Rect> _rects =
             new Dictionary<string, Rect>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _hidden =
@@ -441,7 +443,7 @@ namespace KnightInCradle.CharmUi
                     }
                     Color old = GUI.color;
                     GUI.color = el.color;
-                    GUI.Label(rect, el.text.content, GetStyle(el.text));
+                    GUI.Label(rect, KicPanelText.LayoutText(el.path, el.text.content), GetStyle(el.text));
                     GUI.color = old;
                 }
             }
@@ -835,7 +837,13 @@ namespace KnightInCradle.CharmUi
             string desc = CharmDatabase.DescOf(cd, Controller.Owner);
             if (id == CharmDatabase.FixedCharmId)
             {
-                desc = "这个护符是持有者的一部分，不能卸下。";
+                desc = KicL10n.Pick(
+                    "この護符は持ち主の一部であり、外すことはできない。",
+                    "This charm is part of its bearer and cannot be removed.",
+                    "이 호부는 소유자의 일부이며 해제할 수 없다.",
+                    "เครื่องรางนี้เป็นส่วนหนึ่งของผู้สวมใส่ จึงถอดออกไม่ได้",
+                    "这个护符是持有者的一部分，不能卸下。",
+                    "這個護符是持有者的一部分，不能卸下。");
             }
             Color old = GUI.color;
             GUI.color = Color.white;
@@ -857,9 +865,13 @@ namespace KnightInCradle.CharmUi
                 if (TryGetTaggedElement("detail_cost", out UiElementData costEl, out Rect costRect) &&
                     costEl.text != null)
                 {
+                    // 费用行文本按当前语言显示（需求 2026-10-01）
+                    string costLabel = KicL10n.Pick("コスト：", "Cost: ", "비용: ", "ค่าใช้จ่าย: ", "花费：", "花費：");
                     string costText = id == CharmDatabase.FixedCharmId
-                        ? "不可卸下"
-                        : (CharmDatabase.CostOf(cd, Controller.Owner) < 0 ? "花费：？" : "花费：" + CharmDatabase.CostOf(cd, Controller.Owner));
+                        ? KicL10n.Pick("取り外せない", "Cannot be removed", "해제 불가", "ถอดไม่ได้", "不可卸下", "不可卸下")
+                        : (CharmDatabase.CostOf(cd, Controller.Owner) < 0
+                            ? costLabel + "?"
+                            : costLabel + CharmDatabase.CostOf(cd, Controller.Owner));
                     GUI.Label(costRect, costText,
                         GetStyle(costEl.text.fontSize, (TextAnchor)costEl.text.alignment, FontStyle.Normal));
                 }
@@ -896,7 +908,7 @@ namespace KnightInCradle.CharmUi
                 {
                     Color old = GUI.color;
                     GUI.color = el.color;
-                    GUI.Label(tr, el.text.content,
+                    GUI.Label(tr, KicPanelText.LayoutText(textPaths[i], el.text.content),
                         GetStyle(el.text.fontSize, (TextAnchor)el.text.alignment, FontStyle.Normal));
                     GUI.color = old;
                 }
@@ -1137,6 +1149,18 @@ namespace KnightInCradle.CharmUi
 
         private GUIStyle GetStyle(int size, TextAnchor align, FontStyle fontStyle)
         {
+            // 需求 2026-10-01：文本跟随游戏语言，游戏里换语言后重建字体与样式
+            KicL10n.Lang lang = KicL10n.Current;
+            if (_fontLangKnown && lang != _fontLang)
+            {
+                ReleaseFontsAndStyles();
+                _fontLang = lang;
+            }
+            else if (!_fontLangKnown)
+            {
+                _fontLang = lang;
+                _fontLangKnown = true;
+            }
             string key = size + "_" + (int)align + "_" + (int)fontStyle;
             if (_styles.TryGetValue(key, out GUIStyle st))
             {
@@ -1147,8 +1171,7 @@ namespace KnightInCradle.CharmUi
             string fkey = px + "_" + (int)fontStyle;
             if (!_fonts.TryGetValue(fkey, out Font font))
             {
-                font = Font.CreateDynamicFontFromOSFont(
-                    new[] { "Microsoft YaHei", "SimHei", "Noto Sans CJK SC", "Arial" }, px);
+                font = Font.CreateDynamicFontFromOSFont(KicL10n.FontCandidates(), px);
                 font.hideFlags = HideFlags.HideAndDontSave;
                 _fonts[fkey] = font;
             }
@@ -1160,6 +1183,20 @@ namespace KnightInCradle.CharmUi
             st.normal.textColor = Color.white;
             _styles[key] = st;
             return st;
+        }
+
+        /// <summary>释放全部动态字体与样式（换语言时重建用；关闭界面时也走这里）。</summary>
+        private void ReleaseFontsAndStyles()
+        {
+            foreach (Font f in _fonts.Values)
+            {
+                if (f != null)
+                {
+                    Destroy(f);
+                }
+            }
+            _fonts.Clear();
+            _styles.Clear();
         }
 
         private GUIStyle GetStyle(UiTextData td)

@@ -21,9 +21,9 @@ namespace KnightInCradle
         /// 配合后面的 `dll=路径 (文件时间)` 可以立刻确认游戏实际加载的是哪一份 DLL。
         /// </summary>
         // 2026-09-27.42：护符槽配方标记为"已知"（CInfo.obtain_flag）→ 才会出现在炼金列表里
-        // 2026-09-30.18：适配 AIC 030h —— 黑暗覆盖层不透明度改为跨版本自适应
-        // （030g 的 `base_alpha` / 030h 的 `level255`），同一份源码可分别编译到两个版本
-        internal const string SelfBuildTag = "2026-09-30.18";
+        // 2026-10-01.01：多语言支持 —— 键位面板 + 护符名称/描述/费用行 6 语言
+        // （跟随 AIC 语言：日本语/English/한국어/ไทย/简体/繁體；zh-cn 用原有中文）
+        internal const string SelfBuildTag = "2026-10-01.01";
 
         private static bool _harmonyApplied;
         private static bool _seriousInitApplied; // 启动时是否已应用过一次布局（防止残留居中布局）
@@ -180,6 +180,7 @@ namespace KnightInCradle
             }
             // 局内键位设置面板（默认 F9 开关；幂等创建）
             KeyRebindLayer.Ensure(gameObject);
+            KicL10n.LogOnce(); // 启动时确认一次当前语言（日志里能看到 AIC 语言族 → 模组文本语言）
 
             if (_knightMode)
             {

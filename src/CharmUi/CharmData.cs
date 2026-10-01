@@ -46,13 +46,15 @@ namespace KnightInCradle.CharmUi
         public static string NameOf(CharmData cd, CharmOwner owner)
         {
             if (cd == null) return "";
-            return owner == CharmOwner.Knight && !string.IsNullOrEmpty(cd.KName) ? cd.KName : cd.Name;
+            string zh = owner == CharmOwner.Knight && !string.IsNullOrEmpty(cd.KName) ? cd.KName : cd.Name;
+            return KicCharmText.Name(owner, cd.Id, zh);
         }
 
         public static string DescOf(CharmData cd, CharmOwner owner)
         {
             if (cd == null) return "";
-            return owner == CharmOwner.Knight && !string.IsNullOrEmpty(cd.KDesc) ? cd.KDesc : cd.Desc;
+            string zh = owner == CharmOwner.Knight && !string.IsNullOrEmpty(cd.KDesc) ? cd.KDesc : cd.Desc;
+            return KicCharmText.Desc(owner, cd.Id, zh);
         }
 
         public static int CostOf(CharmData cd, CharmOwner owner)

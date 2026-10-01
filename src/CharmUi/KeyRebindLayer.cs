@@ -41,6 +41,10 @@ namespace KnightInCradle.CharmUi
         }
 
         private List<Row> _rows;
+        private bool _rowsLangKnown; // 面板文本已按哪种语言生成（游戏里换语言后重生成一行）
+        private KicL10n.Lang _rowsLang;
+        private bool _styleLangKnown; // 面板字体/样式已按哪种语言建立
+        private KicL10n.Lang _styleLang;
 
         /// <summary>面板是否打开（打开期间屏蔽模组自己的输入，避免点按钮时顺手放招）。</summary>
         public static bool IsOpen
@@ -135,40 +139,58 @@ namespace KnightInCradle.CharmUi
         {
             _rows = new List<Row>
             {
-                new Row { Label = "切换 小骑士 / 诺艾尔", Entry = KnightInCradlePlugin.ToggleKey, Fallback = KeyCode.T },
-                new Row { Label = "护符界面 开关", Entry = KnightInCradlePlugin.CharmUiKey, Fallback = KeyCode.O },
-                new Row { Label = "认真模式 开关", Entry = KnightInCradlePlugin.SeriousModeKey, Fallback = KeyCode.Period },
-                new Row { Label = "挑衅", Entry = KnightInCradlePlugin.TauntKey, Fallback = KeyCode.V },
-                new Row { Label = "会心 +100（调试）", Entry = KnightInCradlePlugin.CritStackKey, Fallback = KeyCode.H },
-                new Row { Label = "── 小骑士：移动/动作 ──", Entry = null, Fallback = KeyCode.None },
-                new Row { Label = "左移", Entry = KnightInCradlePlugin.MoveLeftKey, Fallback = KeyCode.A },
-                new Row { Label = "右移", Entry = KnightInCradlePlugin.MoveRightKey, Fallback = KeyCode.D },
-                new Row { Label = "跳跃", Entry = KnightInCradlePlugin.JumpKey, Fallback = KeyCode.W },
-                new Row { Label = "冲刺", Entry = KnightInCradlePlugin.DashKey, Fallback = KeyCode.LeftShift },
-                new Row { Label = "攻击 / 蓄力劈砍", Entry = KnightInCradlePlugin.AttackKey, Fallback = KeyCode.Mouse0 },
-                new Row { Label = "聚焦 / 回血", Entry = KnightInCradlePlugin.FocusKey, Fallback = KeyCode.C },
-                new Row { Label = "法球", Entry = KnightInCradlePlugin.FireballKey, Fallback = KeyCode.S },
-                new Row { Label = "梦钉", Entry = KnightInCradlePlugin.DreamNailKey, Fallback = KeyCode.Space },
-                new Row { Label = "抬头 / 法术上", Entry = KnightInCradlePlugin.LookUpKey, Fallback = KeyCode.Q },
-                new Row { Label = "低头 / 法术下", Entry = KnightInCradlePlugin.LookDownKey, Fallback = KeyCode.Mouse1 },
-                new Row { Label = "超级冲刺（额外键）", Entry = KnightInCradlePlugin.SuperDashKey, Fallback = KeyCode.LeftControl },
-                new Row { Label = "── 查看动作（姿势浏览器） ──", Entry = null, Fallback = KeyCode.None },
-                new Row { Label = "查看动作：下一个姿势", Entry = KnightInCradlePlugin.PoseBrowserNextKeyConfig, Fallback = KeyCode.F8 },
-                new Row { Label = "查看动作：上一个姿势", Entry = KnightInCradlePlugin.PoseBrowserPrevKeyConfig, Fallback = KeyCode.F7 },
-                new Row { Label = "查看动作：关闭浏览", Entry = KnightInCradlePlugin.PoseBrowserOffKeyConfig, Fallback = KeyCode.F9 },
-                new Row { Label = "── 本面板 ──", Entry = null, Fallback = KeyCode.None },
-                new Row { Label = "打开 / 关闭键位面板", Entry = KnightInCradlePlugin.KeyRebindToggleKey, Fallback = KeyCode.F10, Note = "改完立即生效" },
+                new Row { Label = KicPanelText.SwitchChar, Entry = KnightInCradlePlugin.ToggleKey, Fallback = KeyCode.T },
+                new Row { Label = KicPanelText.CharmUi, Entry = KnightInCradlePlugin.CharmUiKey, Fallback = KeyCode.O },
+                new Row { Label = KicPanelText.SeriousMode, Entry = KnightInCradlePlugin.SeriousModeKey, Fallback = KeyCode.Period },
+                new Row { Label = KicPanelText.Taunt, Entry = KnightInCradlePlugin.TauntKey, Fallback = KeyCode.V },
+                new Row { Label = KicPanelText.CritStacks, Entry = KnightInCradlePlugin.CritStackKey, Fallback = KeyCode.H },
+                new Row { Label = KicPanelText.SectionKnight, Entry = null, Fallback = KeyCode.None },
+                new Row { Label = KicPanelText.MoveLeft, Entry = KnightInCradlePlugin.MoveLeftKey, Fallback = KeyCode.A },
+                new Row { Label = KicPanelText.MoveRight, Entry = KnightInCradlePlugin.MoveRightKey, Fallback = KeyCode.D },
+                new Row { Label = KicPanelText.Jump, Entry = KnightInCradlePlugin.JumpKey, Fallback = KeyCode.W },
+                new Row { Label = KicPanelText.Dash, Entry = KnightInCradlePlugin.DashKey, Fallback = KeyCode.LeftShift },
+                new Row { Label = KicPanelText.Attack, Entry = KnightInCradlePlugin.AttackKey, Fallback = KeyCode.Mouse0 },
+                new Row { Label = KicPanelText.Focus, Entry = KnightInCradlePlugin.FocusKey, Fallback = KeyCode.C },
+                new Row { Label = KicPanelText.Fireball, Entry = KnightInCradlePlugin.FireballKey, Fallback = KeyCode.S },
+                new Row { Label = KicPanelText.DreamNail, Entry = KnightInCradlePlugin.DreamNailKey, Fallback = KeyCode.Space },
+                new Row { Label = KicPanelText.LookUp, Entry = KnightInCradlePlugin.LookUpKey, Fallback = KeyCode.Q },
+                new Row { Label = KicPanelText.LookDown, Entry = KnightInCradlePlugin.LookDownKey, Fallback = KeyCode.Mouse1 },
+                new Row { Label = KicPanelText.SuperDash, Entry = KnightInCradlePlugin.SuperDashKey, Fallback = KeyCode.LeftControl },
+                new Row { Label = KicPanelText.SectionPose, Entry = null, Fallback = KeyCode.None },
+                new Row { Label = KicPanelText.PoseNext, Entry = KnightInCradlePlugin.PoseBrowserNextKeyConfig, Fallback = KeyCode.F8 },
+                new Row { Label = KicPanelText.PosePrev, Entry = KnightInCradlePlugin.PoseBrowserPrevKeyConfig, Fallback = KeyCode.F7 },
+                new Row { Label = KicPanelText.PoseOff, Entry = KnightInCradlePlugin.PoseBrowserOffKeyConfig, Fallback = KeyCode.F9 },
+                new Row { Label = KicPanelText.SectionPanel, Entry = null, Fallback = KeyCode.None },
+                new Row { Label = KicPanelText.PanelToggle, Entry = KnightInCradlePlugin.KeyRebindToggleKey, Fallback = KeyCode.F10 },
             };
+            _rowsLang = KicL10n.Current;
+            _rowsLangKnown = true;
         }
 
         private void EnsureStyles()
         {
-            if (_label != null)
+            // 需求 2026-10-01：面板文本跟随游戏语言，字体候选也按语言排序
+            // （泰语/韩语/日语各自的系统字体放在最前，避免缺字显示成方块）；
+            // 游戏内换语言后这里会重建一次字体与样式。
+            KicL10n.Lang lang = KicL10n.Current;
+            if (_label != null && _styleLangKnown && lang == _styleLang)
             {
                 return;
             }
-            Font font = Font.CreateDynamicFontFromOSFont(
-                new[] { "Microsoft YaHei", "SimHei", "SimSun", "Yu Gothic UI", "Arial" }, 16);
+            _styleLang = lang;
+            _styleLangKnown = true;
+            Font oldFont = _label != null ? _label.font : null;
+            Font font = Font.CreateDynamicFontFromOSFont(KicL10n.FontCandidates(), 16);
+            if (oldFont != null && oldFont != font)
+            {
+                try
+                {
+                    UnityEngine.Object.Destroy(oldFont);
+                }
+                catch (Exception)
+                {
+                }
+            }
             _title = new GUIStyle { font = font, fontSize = 20, fontStyle = FontStyle.Bold };
             _title.normal.textColor = new Color(1f, 0.85f, 0.3f);
             _label = new GUIStyle { font = font, fontSize = 16, alignment = TextAnchor.MiddleLeft };
@@ -189,6 +211,15 @@ namespace KnightInCradle.CharmUi
                 if (_rows == null)
                 {
                     BuildRows();
+                }
+                else if (!_capturing)
+                {
+                    // 游戏里切了语言就重新生成一次行文本（改键进行中不打断）
+                    KicL10n.Lang lang = KicL10n.Current;
+                    if (!_rowsLangKnown || lang != _rowsLang)
+                    {
+                        BuildRows();
+                    }
                 }
                 EnsureStyles();
 
@@ -212,11 +243,11 @@ namespace KnightInCradle.CharmUi
                     KnightInCradlePlugin.KeyRebindToggleKey != null
                         ? KnightInCradlePlugin.KeyRebindToggleKey.Value
                         : null, KeyCode.F10).ToString();
-                GUI.Label(titleRect, "键位设置（" + toggleName + " 打开 / 关闭）", _title);
+                GUI.Label(titleRect, KicPanelText.Title(toggleName), _title);
 
                 string hint = _capturing
-                    ? "请按下新的按键 / 鼠标键…（Esc 取消）"
-                    : "点「改键」后按任意键；改完立即生效并已保存到 cfg。AIC 自身按键请到游戏设置里改。";
+                    ? KicPanelText.HintCapture
+                    : KicPanelText.HintNormal;
                 GUI.Label(new Rect(panel.x + 16f, panel.y + 38f, panel.width - 32f, 22f), hint, _hint);
 
                 float rowH = 26f;
@@ -234,16 +265,16 @@ namespace KnightInCradle.CharmUi
                     }
                     KeyCode cur = KeyConfig.Parse(r.Entry.Value, r.Fallback);
                     string shown = _capturing && _captureIndex == i
-                        ? "（等待按键…）"
-                        : (cur == KeyCode.None ? "未设置" : cur.ToString());
+                        ? KicPanelText.WaitingKey
+                        : (cur == KeyCode.None ? KicPanelText.NotSet : cur.ToString());
                     GUI.Label(new Rect(row.x + 6f, row.y, inner.width - 220f, row.height), r.Label, _label);
                     GUI.Label(new Rect(row.x + row.width - 210f, row.y, 110f, row.height), shown, _hint);
-                    if (GUI.Button(new Rect(row.x + row.width - 96f, row.y, 44f, row.height), "改键", _button))
+                    if (GUI.Button(new Rect(row.x + row.width - 96f, row.y, 44f, row.height), KicPanelText.Rebind, _button))
                     {
                         _capturing = true;
                         _captureIndex = i;
                     }
-                    if (GUI.Button(new Rect(row.x + row.width - 48f, row.y, 44f, row.height), "默认", _button))
+                    if (GUI.Button(new Rect(row.x + row.width - 48f, row.y, 44f, row.height), KicPanelText.Reset, _button))
                     {
                         ApplyKey(i, r.Fallback);
                     }
