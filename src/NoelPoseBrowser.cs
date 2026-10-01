@@ -53,8 +53,18 @@ namespace KnightInCradle
                 {
                     return null;
                 }
-                return "姿势浏览器 " + (_index + 1) + "/" + _titles.Count + "  " + cur +
-                       "\nF7 上一个 / F8 下一个 / F9 关闭";
+                // 需求 2026-10-01：跟随游戏语言
+                return KicL10n.Pick(
+                           "ポーズブラウザ ", "Pose browser ", "포즈 브라우저 ", "ดูท่ากิริยา ",
+                           "查看动作 ", "檢視動作 ") +
+                       (_index + 1) + "/" + _titles.Count + "  " + cur + "\n" +
+                       KicL10n.Pick(
+                           "F7 前へ / F8 次へ / F9 終了",
+                           "F7 prev / F8 next / F9 close",
+                           "F7 이전 / F8 다음 / F9 닫기",
+                           "F7 ก่อนหน้า / F8 ถัดไป / F9 ปิด",
+                           "F7 上一个 / F8 下一个 / F9 关闭",
+                           "F7 上一個 / F8 下一個 / F9 關閉");
             }
         }
 

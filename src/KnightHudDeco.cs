@@ -393,6 +393,8 @@ namespace KnightInCradle
 
         // ---- 姿势浏览器（调试工具）文本：左上角显示 序号/总数 + 姿势名 ----
         private static GUIStyle _poseBrowserStyle;
+        private static bool _poseBrowserLangKnown;
+        private static KicL10n.Lang _poseBrowserLang;
 
         /// <summary>护符33 冲刺段整屏白屏剩余时长（秒）。</summary>
         private static float _screenWhiteLeft;
@@ -432,12 +434,16 @@ namespace KnightInCradle
 
         private static void EnsurePoseBrowserStyle(int fontSize)
         {
-            if (_poseBrowserStyle != null && _poseBrowserStyle.fontSize == fontSize)
+            // 需求 2026-10-01：这里显示的是跟随语言的姿势浏览器文本，字体也按语言取
+            KicL10n.Lang lang = KicL10n.Current;
+            if (_poseBrowserStyle != null && _poseBrowserStyle.fontSize == fontSize &&
+                _poseBrowserLangKnown && _poseBrowserLang == lang)
             {
                 return;
             }
-            Font font = Font.CreateDynamicFontFromOSFont(
-                new[] { "SimSun", "NSimSun", "宋体", "Microsoft YaHei", "Yu Gothic UI" }, fontSize);
+            _poseBrowserLang = lang;
+            _poseBrowserLangKnown = true;
+            Font font = Font.CreateDynamicFontFromOSFont(KicL10n.FontCandidates(), fontSize);
             _poseBrowserStyle = new GUIStyle
             {
                 alignment = TextAnchor.UpperLeft,
