@@ -12,10 +12,12 @@ Use items from Hollow Knight to explore and fight in AliceInCradle!
 
 ### Install
 
-- 1：Make sure your BepInEx version is 5.4.23.5
+- 1：Make sure your BepInEx version is 5.4.23.5 , The version of AliceInCradle is 030h
 - 2：Download the zip file from the release section on the right
 - 3：Unzip the files to the following location：AliceInCradle Win ver030\AliceInCradle_ver030\BepInEx\plugins
 
 ### Things to Know Before Playing
 Noelle starts with 3 charm slots. 
 You can get an extra charm slot for every 4 chests you open on the map, up to a maximum of 11 extra slots from chests.
+
+Press F10 to set the key
