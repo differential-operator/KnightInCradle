@@ -1,4 +1,4 @@
-# KnightInCradle_level_2
+# KnightInCradle
 A mod allows you to switch The Knight and Noel in AliceInCradle.
 Use items from Hollow Knight to explore and fight in AliceInCradle!
 <img width="946" height="439" alt="1" src="https://github.com/user-attachments/assets/79e3bab9-2ea0-4a67-8536-a197bbae8c9b" />
