@@ -1,0 +1,36 @@
+# Build and IDE output
+**/bin/
+**/obj/
+.vs/
+.idea/
+*.user
+*.suo
+*.pdb
+# Game files and local runtime resources
+/reference/
+/_compat_current030/
+/assets/hk/
+/audio_embed/
+/AudioClip/
+/charm_ui/
+/CharmUiExport/
+# Scratch work, logs and backups
+/_grimm_work/
+/_decomp*/
+/_tmp_*/
+/tools/_tmp_*/
+/backup*/
+*.log
+*.dmp
+*.bak
+*.bak-*
+*.prev
+# Credentials and personal settings
+.env
+.env.*
+!.env.example
+*.pfx
+*.pem
+/BepInEx/
+/release/
+/releases/
