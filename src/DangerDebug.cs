@@ -15,6 +15,7 @@ namespace KnightInCradle
         internal static int Current => Controller?.getDangerMeterVal(false, true) ?? 0;
         internal static void Apply(Harmony harmony, ConfigFile config)
         {
+            BattleDangerDiagnostics.Apply(harmony);
             uncapped = config.Bind("Debug", "DisableDangerCap", false, "禁用原版危险度160上限（F10调试开关）");
             harmony.Patch(AccessTools.Method(typeof(NightController), "getDangerLevel"),
                 postfix: new HarmonyMethod(typeof(DangerDebug), nameof(Level)));

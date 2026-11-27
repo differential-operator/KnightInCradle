@@ -303,7 +303,26 @@ namespace KnightInCradle
             GUI.DrawTextureWithTexCoords(new Rect(Mathf.Round(x-width*0.5f),Mathf.Round(y-height*0.5f),Mathf.Round(width),Mathf.Round(height)),texture,uv,true);
         }
 
+        // IMGUI draws smaller depth values in front. Keep ornaments with the world HUD,
+        // behind both modal panels, rather than hiding them for only one panel.
         private void OnGUI()
+        {
+            Color previousColor = GUI.color;
+            Matrix4x4 previousMatrix = GUI.matrix;
+            try
+            {
+                // GUI.depth belongs to this GUI behaviour; restoring it here undoes sorting.
+                GUI.depth = 100;
+                DrawHudGui();
+            }
+            finally
+            {
+                GUI.color = previousColor;
+                GUI.matrix = previousMatrix;
+            }
+        }
+
+        private void DrawHudGui()
         {
             // 护符33 冲刺段：整屏白屏（与骑士的"四周径向闪光"不同，这里是**铺满全屏的纯白**）
             if (_screenWhiteLeft > 0f)
@@ -317,11 +336,6 @@ namespace KnightInCradle
                 catch (Exception)
                 {
                 }
-            }
-            // 护符界面打开时隐藏 HUD 装饰，避免叠在护符 UI 之上
-            if (CharmUiController.Instance != null && CharmUiController.Instance.IsOpen)
-            {
-                return;
             }
             // 姿势浏览器（调试工具）：诺艾尔/骑士模式都要显示，故放在骑士模式判断之前
             DrawPoseBrowserText();

@@ -23,7 +23,7 @@ namespace KnightInCradle
         // 2026-09-27.42：护符槽配方标记为"已知"（CInfo.obtain_flag）→ 才会出现在炼金列表里
         // 2026-10-01.01：多语言支持 —— 键位面板 + 护符名称/描述/费用行 6 语言
         // （跟随 AIC 语言：日本语/English/한국어/ไทย/简体/繁體；zh-cn 用原有中文）
-        internal const string SelfBuildTag = "2026-11-24.charms02";
+        internal const string SelfBuildTag = "2026-11-25.dangertrace01";
 
         private static bool _harmonyApplied;
         private static int _lastCheckFrame = -1;
@@ -1431,7 +1431,7 @@ namespace KnightInCradle
                 {
                     return;
                 }
-                if (k.NativeTransferOwnsHost) return; // 包括出门脚本启动但尚未换图的阶段。
+                if (k.RespawnOwnsHost || k.NativeTransferOwnsHost) return; // 包括出门脚本启动但尚未换图的阶段。
                 // 宿主碰撞箱尺寸：诺艾尔每次 setBounds（换姿势/蹲伏/倒地/受击）都会把尺寸
                 // 写回她自己的身体尺寸，所以这里每帧校验一次（不符才重建碰撞体）。
                 EnforceKnightBodySize(pr);

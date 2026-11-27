@@ -234,6 +234,8 @@ namespace KnightInCradle.CharmUi
 
         private void OnGUI()
         {
+            // Retain the per-behaviour depth so Unity sorts this panel above the HUD.
+            GUI.depth = -200;
             try
             {
                 if (!_open)

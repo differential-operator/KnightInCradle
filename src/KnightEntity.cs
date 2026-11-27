@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -1242,6 +1242,30 @@ namespace KnightInCradle
             }
         }
 
+        private readonly RespawnArrivalGuard _respawnArrival = new RespawnArrivalGuard();
+        private bool _respawnPending;
+        private bool _respawnCrossedMap;
+        public bool RespawnOwnsHost => _respawnPending;
+
+        private void BeginRespawnTransfer()
+        {
+            var m2d = M2DBase.Instance as NelM2DBase;
+            var destination = _hasRespawn && _respawnMp != null ? _respawnMp : m2d?.curMap;
+            if (destination == null) throw new InvalidOperationException("No respawn destination");
+            _respawnPending = true;
+            _respawnArrival.Begin(destination);
+            _isSitting = _sitSliding = _sitStandingUp = false;
+            _sitBench = null;
+            _fastTravelInProgress = false;
+            _entryWalkActive = _entryWalkOwnsArrival = false;
+            RoomTransferDiagnostics.ClearArrival();
+            KnightInCradleBehaviour.ResumeNoelForTransfer();
+            _respawnCrossedMap = RespawnNativeBridge.Begin(m2d, destination,
+                Mathf.FloorToInt(_hasRespawn ? _respawnX : X),
+                Mathf.FloorToInt(_hasRespawn ? _respawnY : Y));
+            KnightInCradlePlugin.PluginLog?.LogInfo("[KIC][重生] 等待房间初始化 map=" + destination.key);
+        }
+
         /// <summary>在长椅/重生点复活：回满血、灵魂补到 90，短暂无敌。</summary>
         private void RespawnAtBench()
         {
@@ -1251,28 +1275,8 @@ namespace KnightInCradle
             bool sitting = false;
             if (_hasRespawn && _respawnMp != null)
             {
-                if (_mp == _respawnMp)
-                {
-                    // 同图：直接传送到重生点
-                    X = _respawnX;
-                    Y = _respawnY;
-                }
-                else
-                {
-                    // 跨图：用 AIC 快速旅行传送（会把诺艾尔传到目标地图的重生点，
-                    // 小骑士随后由地图切换的 _pendingReposition 流程跟随过去）
-                    try
-                    {
-                        M2LpMapTransferBase.executeTransferFastTravel(
-                            _respawnMp,
-                            Mathf.FloorToInt(_respawnX),
-                            Mathf.FloorToInt(_respawnY),
-                            10);
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
+                X = _respawnX;
+                Y = _respawnY;
             }
             else if (CheckGround(out float gt, Y + SizeY))
             {
@@ -1358,7 +1362,7 @@ namespace KnightInCradle
         /// </summary>
         private void HandleDeathState()
         {
-            _deathTimer += Time.deltaTime;
+            _deathTimer += Time.unscaledDeltaTime;
             if (_deathBlackPhase == 0f)
             {
                 _deathBlackAlpha = Mathf.Clamp01(_deathTimer / DeathBlackInTime);
@@ -1375,12 +1379,38 @@ namespace KnightInCradle
                 {
                     _deathBlackPhase = 2f;
                     _deathTimer = 0f;
-                    RespawnAtBench(); // 全黑期间回到长椅并回满
-                    _isDead = false;
-                    _respawnFadeOut = true;
-                    _respawnFadeTimer = DeathBlackOutTime;
+                    try { BeginRespawnTransfer(); }
+                    catch (Exception ex)
+                    {
+                        _respawnPending = false;
+                        _deathBlackPhase = 1f;
+                        _deathTimer = -0.6f;
+                        KnightInCradlePlugin.PluginLog?.LogError("[KIC][重生] 房间重建失败，等待重试：" + ex);
+                    }
                 }
             }
+            else if (_deathBlackPhase == 2f && _respawnPending)
+            {
+                // Update has verified the destination, host and native loading state.
+                RespawnAtBench();
+                _pendingReposition = 0;
+                _pendingRepositionActive = false;
+                _transitionPause = false;
+                _fastTravelInProgress = false;
+                PendingLoadRebind = true;
+                PendingFastTravelRebind = false;
+                _respawnPending = false;
+                _isDead = false;
+                _respawnFadeOut = true;
+                _respawnFadeTimer = DeathBlackOutTime;
+                _lastSafeX = X;
+                _lastSafeY = Y;
+                KnightInCradleBehaviour.RefreshNoelForKnight();
+                RespawnNativeBridge.Finish((NelM2DBase)M2DBase.Instance, GetPr(), _respawnCrossedMap);
+                _respawnCrossedMap = false;
+                KnightInCradlePlugin.PluginLog?.LogInfo("[KIC][重生] 已恢复角色与镜头 map=" + _mp?.key);
+            }
+
         }
 
         /// <summary>击飞物理：水平撞墙停、垂直重力 + 落地。</summary>
@@ -8595,7 +8625,7 @@ namespace KnightInCradle
             _entryWalkActive = _entryWalkOwnsArrival = false;
         }
         public bool NativeTransferOwnsHost => _roomHandoff.Active || _roomHandoffCompleted || NativeExitEventRunning;
-        public bool IsRepositioning => _pendingReposition > 0 || _transitionPause || NativeTransferOwnsHost;
+        public bool IsRepositioning => _respawnPending || _pendingReposition > 0 || _transitionPause || NativeTransferOwnsHost;
         /// <summary>过图跟随阶段标志：告知 KnightInCradleBehaviour 此阶段必须保持诺艾尔物理运行。</summary>
         public bool PendingRepositionActive => _pendingRepositionActive || NativeTransferOwnsHost;
         /// <summary>
@@ -10889,6 +10919,10 @@ namespace KnightInCradle
                 KnightHudDeco.OnFastTravelArrive();
             }
             _prevTransferring = transferring;
+            // Do not touch render tickets, bench chips or the host while native map setup runs.
+            if (_respawnPending && !_respawnArrival.Tick(cur, GetPr()?.Mp,
+                cur != null && cur.opened && cur.loaded, transferring, Time.frameCount))
+                return;
             if (cur != null && _mp != cur)
             {
                 Map2d oldMp = _mp;
@@ -11616,7 +11650,7 @@ namespace KnightInCradle
             if (_respawnFadeOut)
             {
                 // 复活后黑屏淡出：短暂锁输入，恢复站立
-                _respawnFadeTimer -= Time.deltaTime;
+                _respawnFadeTimer -= Time.unscaledDeltaTime;
                 _deathBlackAlpha = Mathf.Clamp01(_respawnFadeTimer / DeathBlackOutTime);
                 if (_respawnFadeTimer <= 0f)
                 {
@@ -18372,6 +18406,7 @@ namespace KnightInCradle
             {
                 return;
             }
+            _respawnPending = false;
             _hasRespawn = true;
             _respawnX = noel.x;
             _respawnY = noel.mbottom - SizeY;

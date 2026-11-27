@@ -2,7 +2,7 @@
 
 在 AliceInCradle 中切换小骑士与诺艾尔，使用小骑士的战斗动作、技能与护符探索地图。
 
-当前整理版本：**v26.11.1**。适配 **AliceInCradle 0.30i / BepInEx 5.x**，本地验证框架为 5.4.23.5。
+当前整理版本：**v26.11.2**。适配 **AliceInCradle 0.30i / BepInEx 5.x**，本地验证框架为 5.4.23.5。
 
 ## 主要功能
 
@@ -15,7 +15,7 @@
 
 ## 安装
 
-需要完整的模组安装包。将其中的 `KnightInCradle` 文件夹放到游戏的 `BepInEx/plugins`：
+从 [Releases](https://github.com/differential-operator/KnightInCradle/releases/latest) 下载 `KnightInCradle.zip`。将其中的 `KnightInCradle` 文件夹放到游戏的 `BepInEx/plugins`：
 
 ```text
 BepInEx/plugins/KnightInCradle/

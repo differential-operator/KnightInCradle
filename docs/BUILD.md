@@ -47,7 +47,7 @@ dotnet build -c Release
 不需要启动游戏的规则测试：
 
 ```powershell
-$tests = 'CharmEquipmentTest','DangerDebugTest','DangerHealthTest','EventSessionTest','JumperContactTest','LeafFlutterTest','OverlayEscapeTest','RoomTransferTest','TerrainCollisionTest'
+$tests = 'RespawnLifecycleTest','RespawnArrivalTest','CharmEquipmentTest','DangerDebugTest','DangerHealthTest','EventSessionTest','JumperContactTest','LeafFlutterTest','OverlayEscapeTest','RoomTransferTest','TerrainCollisionTest'
 foreach ($name in $tests) {
     dotnet run --project "tools/$name" -c Release
     if ($LASTEXITCODE -ne 0) { throw "$name failed" }
